@@ -40,10 +40,10 @@ df = pd.read_excel('Dashboard IFM historico.xlsx')
 def cargar_datos_maestros():
     """Carga las pestañas de Compilado y Ramos desde el Excel."""
     try:
-        # Carga pestaña Compilado (General)
-        df_comp = pd.read_excel(RUTA_EXCEL, sheet_name="Compilado", header=5)
-        # Carga pestaña PNC_Ramos (Detallado por ramos)
-        df_ram = pd.read_excel(RUTA_EXCEL, sheet_name="PNC_Ramos", header=0)
+        archivo = 'Dashboard IFM historico.xlsx'
+        # 2. Cargamos las hojas usando ese nombre
+        df_comp = pd.read_excel(archivo, sheet_name="Compilado", header=5)
+        df_ram = pd.read_excel(archivo, sheet_name="PNC_Ramos", header=0)
         # Limpieza y normalización de meses para orden cronológico
         meses_orden = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
                        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
