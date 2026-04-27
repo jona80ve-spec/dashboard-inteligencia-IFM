@@ -12,25 +12,41 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
-
 # Estilos CSS para mejorar la apariencia y ocultar elementos innecesarios
+# ... después de st.set_page_config(...)
 st.markdown("""
     <style>
     .main {background-color: #0e1117;}
     [data-testid="stMetricValue"] {font-size: 28px !important;}
     .stMetric {
-        background-color: #1e2130; 
-        padding: 20px; 
-        border-radius: 12px; 
+        background-color: #1e2130;
+        padding: 20px;
+        border-radius: 12px;
         border: 1px solid #3d4461;
     }
     footer {visibility: hidden;}
     header {visibility: hidden;}
-    /* Ajuste para que las tablas se vean mejor en modo oscuro */
+    
+    /* Ajuste para las tablas */
     .stDataFrame {border: 1px solid #3d4461; border-radius: 10px;}
+
+    /* NUEVO: BOTÓN DE FLECHA SIEMPRE VISIBLE Y AZUL */
+    [data-testid="stSidebarCollapseButton"] {
+        background-color: #0077b6 !important; /* Tu Azul Premium */
+        color: white !important;
+        border-radius: 50% !important;
+        width: 40px !important;
+        height: 40px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        box-shadow: 0px 4px 10px rgba(0,0,0,0.3) !important;
+    }
+    [data-testid="stSidebarCollapseButton"] svg {
+        fill: white !important;
+    }
     </style>
     """, unsafe_allow_html=True)
-
 # =================================================================
 # 2. RUTAS Y CARGA DE DATOS (CACHEADO)
 # =================================================================
