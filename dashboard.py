@@ -34,7 +34,7 @@ st.markdown("""
 # =================================================================
 # 2. RUTAS Y CARGA DE DATOS (CACHEADO)
 # =================================================================
-RUTA_EXCEL = r"C:\Users\jonatan.avendano\Desktop\Documentos JA\IFM\Dasboard IFM empresas de seguros\Dashboard IFM historico.xlsx"
+df = pd.read_excel('Dashboard IFM historico.xlsx')
 
 @st.cache_data
 def cargar_datos_maestros():
