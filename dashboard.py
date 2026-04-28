@@ -247,7 +247,7 @@ if df_compilado is not None:
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
             df_resumen = pd.DataFrame({
-                'NombreCorto': [f'SUB-TOTAL {titulo.upper()}'],
+                ' ': [f'SUB-TOTAL {titulo.upper()}'],
                 'PrimasNetasCobradas': [formato_ves(suma_pnc)],
                 'Mkt (%)': [f"{mkt_pct:.2f}%"]
             })
