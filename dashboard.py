@@ -193,12 +193,14 @@ if df_compilado is not None:
         st.subheader("⚖️ Monitor de Gestión Técnica")
         modo_vista = st.radio("Filtro visual:", ["Top 10 por PNC", "Mercado Completo"], horizontal=True)
 
-        # Preparación de Ranking y Cálculos Base
+        # Preparación de Ranking
         df_ranking = df_act.copy()
+        
+        # 1. Cálculo de Cuota de Mercado Global
         total_mercado_pnc = df_ranking['PrimasNetasCobradas'].sum()
         df_ranking['Mkt (%)'] = (df_ranking['PrimasNetasCobradas'] / total_mercado_pnc * 100).fillna(0)
 
-        # Ratios Técnicos
+        # 2. Ratios Técnicos (Cálculos base)
         df_ranking['Com (%)'] = (df_ranking['Comisiones'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
         df_ranking['IA (%)'] = (df_ranking['GastosdeAdquision'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
         df_ranking['IGA (%)'] = (df_ranking['Gastosdeadministracion'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
@@ -210,11 +212,14 @@ if df_compilado is not None:
         cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
-        # --- FUNCIÓN DE ESTILO (Tabla Principal) ---
+        # --- FUNCIÓN DE ESTILO ---
         def style_matrix_clean(df):
             def format_val(val, fmt="{:.2f}%"):
-                if val is None or pd.isna(val) or val == "": return ""
-                return fmt.format(val) if isinstance(val, (int, float)) else str(val)
+                if val is None or pd.isna(val) or val == "":
+                    return ""
+                if isinstance(val, (int, float)):
+                    return fmt.format(val)
+                return str(val)
 
             return df.style\
                 .map(lambda x: 'color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x > 100 else '', subset=['TC (%)'])\
@@ -233,50 +238,54 @@ if df_compilado is not None:
 
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
-        # --- FUNCIÓN DE RENDERIZADO (Corregida para mostrar las 10 empresas) ---
-        def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
+        # --- FUNCIÓN DE RENDERIZADO ACTUALIZADA ---
+        def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=500):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
-            # Datos del Sub-Total
+            # 1. Preparación de Datos del Sub-Total (3 columnas clave)
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
-            # Mini-tabla de 3 columnas
             df_resumen = pd.DataFrame({
                 'NombreCorto': [f'SUB-TOTAL {titulo.upper()}'],
                 'PrimasNetasCobradas': [formato_ves(suma_pnc)],
                 'Mkt (%)': [f"{mkt_pct:.2f}%"]
             })
-            df_resumen.index = ["•"]
+            df_resumen.index = [""] 
 
             c_g, c_t = st.columns([0.25, 0.75])
-            
             with c_g:
                 st.write(f"**{titulo}: Primas**")
                 fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', 
-                             color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro)
-                fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
+                             color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, 
+                             custom_data=['Mkt (%)'])
+                fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Participación: %{customdata[0]:.2f}%<extra></extra>")
+                fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, 
+                                  coloraxis_showscale=False, margin=dict(t=20, b=20))
                 st.plotly_chart(fig, use_container_width=True)
             
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 
-                # TABLA PRINCIPAL - Quitamos el '- 95' para que no corte a la décima empresa
+                # Tabla Principal (Empresas)
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
-                st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura)
+                st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 95)
                 
-                # CSS PARA EL SUB-TOTAL AZUL (Solo contenido)
+                # CSS para el Subtotal Azul (Solo contenido, no títulos)
                 st.markdown("""
                     <style>
                         div[data-testid="stTable"] tbody td {
                             color: #64B5F6 !important;
                             font-weight: bold !important;
                         }
+                        div[data-testid="stTable"] thead th {
+                            color: inherit !important;
+                        }
                     </style>
                 """, unsafe_allow_html=True)
                 
-                # Resumen minimalista abajo
+                # Tabla de Subtotal Minimalista
                 st.table(df_resumen)
 
         # --- LLAMADAS ---
