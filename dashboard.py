@@ -14,15 +14,21 @@ st.set_page_config(
 )
 st.markdown("""
     <style>
-    /* ELIMINAR EL BOTÓN DE CERRAR EL MENÚ (LA X) */
-    [data-testid="sidebar-close-button"], 
-    [data-testid="stSidebarCollapseButton"] {
-        display: none !important;
+    /* Ocultar la barra superior (Fork, GitHub, Menu) */
+    header[data-testid="stHeader"] {
+        visibility: hidden;
+        height: 0%;
     }
-
-    /* OPCIONAL: Quitar el margen que deja el botón para que se vea más limpio */
-    section[data-testid="stSidebar"] > div {
-        padding-top: 2rem;
+    
+    /* Ocultar el menú de opciones superior derecho específicamente */
+    #MainMenu {visibility: hidden;}
+    
+    /* Ocultar el pie de página "Made with Streamlit" */
+    footer {visibility: hidden;}
+    
+    /* Ajustar el espacio superior para que no quede un hueco vacío */
+    .block-container {
+        padding-top: 1rem;
     }
     </style>
     """, unsafe_allow_html=True)
