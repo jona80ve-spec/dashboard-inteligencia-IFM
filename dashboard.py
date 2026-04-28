@@ -14,22 +14,24 @@ st.set_page_config(
 )
 st.markdown("""
     <style>
-    /* Ocultar la barra superior (Fork, GitHub, Menu) */
-    header[data-testid="stHeader"] {
-        visibility: hidden;
-        height: 0%;
-    }
-    
-    /* Ocultar el menú de opciones superior derecho específicamente */
-    #MainMenu {visibility: hidden;}
-    
-    /* Ocultar el pie de página "Made with Streamlit" */
+    /* 1. Fondo y Métricas */
+    .main {background-color: #0e1117;}
+    .stMetric {background-color: #1e2130; padding: 20px; border-radius: 12px;}
+
+    /* 2. Ocultar TODO lo que sobra (Header, Footer, Botones) */
+    header {visibility: hidden;}
     footer {visibility: hidden;}
+    #viewerBadge {display: none;} /* Quita la corona roja */
+    .stAppDeployButton {display: none;} /* Quita botones de despliegue */
     
-    /* Ajustar el espacio superior para que no quede un hueco vacío */
-    .block-container {
-        padding-top: 1rem;
+    /* 3. Bloquear el menú lateral (quitar la X) */
+    [data-testid="sidebar-close-button"], 
+    [data-testid="stSidebarCollapseButton"] {
+        display: none !important;
     }
+
+    /* 4. Ajustar espacio para que se vea Pro */
+    .block-container {padding-top: 0rem;}
     </style>
     """, unsafe_allow_html=True)
 # =================================================================
