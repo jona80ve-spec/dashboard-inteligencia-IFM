@@ -212,7 +212,7 @@ if df_compilado is not None:
         cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
-# --- FUNCIÓN DE ESTILO BLINDADA ---
+# --- FUNCIÓN DE ESTILO (Negrita para Subtotal y colores) ---
         def style_matrix_clean(df):
             def format_val(val, fmt="{:.2f}%"):
                 if val is None or pd.isna(val) or val == "": return ""
@@ -236,11 +236,11 @@ if df_compilado is not None:
 
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
-        # --- FUNCIÓN DE RENDERIZADO CON "ANCLAJE" DE SUBTOTAL ---
+        # --- FUNCIÓN DE RENDERIZADO (Fila de subtotal anclada) ---
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
-            # 1. Creamos el Sub-Total aparte (para que NO se mueva al ordenar)
+            # 1. Preparar Sub-Total en un DataFrame independiente
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
@@ -248,8 +248,9 @@ if df_compilado is not None:
             fila_st_data['NombreCorto'] = f'SUB-TOTAL {titulo.upper()}'
             fila_st_data['PrimasNetasCobradas'] = suma_pnc
             fila_st_data['Mkt (%)'] = mkt_pct
+            
             df_total_fijo = pd.DataFrame([fila_st_data])
-            df_total_fijo.index = ["Σ"] # Usamos un símbolo para diferenciarlo
+            df_total_fijo.index = [" "] # Índice vacío, sin signos extra
 
             c_g, c_t = st.columns([0.25, 0.75])
             with c_g:
@@ -262,29 +263,27 @@ if df_compilado is not None:
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 
-                # CSS para ocultar el encabezado de la segunda tabla y pegarla a la primera
+                # CSS para eliminar encabezados y pegar las tablas visualmente
                 st.markdown("""
                     <style>
                         .stDataFrame { margin-bottom: -1px !important; }
-                        /* Oculta encabezados de la tabla de subtotal */
+                        /* Oculta la cabecera de la tabla inferior (subtotal) */
                         div[data-testid="column"]:nth-child(2) div[data-testid="stVerticalBlock"] > div:last-child .stDataFrame thead {
                             display: none !important;
                             visibility: hidden !important;
-                            height: 0px !important;
                         }
                     </style>
                 """, unsafe_allow_html=True)
 
-                # TABLA SUPERIOR: Datos de Empresas (ORDENABLE)
+                # Tabla 1: Datos que el usuario SI puede ordenar
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 45)
                 
-                # TABLA INFERIOR: Solo el Sub-Total (ESTÁTICA)
-                # Al estar en un objeto st.dataframe distinto, NO se mueve cuando el usuario ordena arriba.
+                # Tabla 2: Sub-Total (Fijo abajo, no se ve afectado por el orden de arriba)
                 st.dataframe(style_matrix_clean(df_total_fijo), use_container_width=True, height=42)
 
-        # --- LLAMADAS ---
+        # --- FLUJO DE LLAMADAS ---
         render_bloque_filtrado(df_ranking.head(10), "Top 10", inicio_ranking=1)
 
         if modo_vista == "Mercado Completo":
