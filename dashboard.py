@@ -196,11 +196,11 @@ if df_compilado is not None:
         # Preparación de Ranking
         df_ranking = df_act.copy()
         
-        # 1. Cálculo de Cuota de Mercado Global
+        # 1. Cálculo de Cuota de Mercado Global (2 decimales)
         total_mercado_pnc = df_ranking['PrimasNetasCobradas'].sum()
         df_ranking['Mkt (%)'] = (df_ranking['PrimasNetasCobradas'] / total_mercado_pnc * 100).fillna(0)
 
-        # 2. Ratios Técnicos (Cálculos base)
+        # 2. Ratios Técnicos
         df_ranking['Com (%)'] = (df_ranking['Comisiones'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
         df_ranking['IA (%)'] = (df_ranking['GastosdeAdquision'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
         df_ranking['IGA (%)'] = (df_ranking['Gastosdeadministracion'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
@@ -212,22 +212,18 @@ if df_compilado is not None:
         cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
-        # --- FUNCIÓN DE ESTILO BLINDADA (Elimina 'None' visualmente) ---
+        # --- FUNCIÓN DE ESTILO BLINDADA (SIN NONE Y CON FORMATO PROFESIONAL) ---
         def style_matrix_clean(df):
-            # Usamos un formateador que maneja explícitamente los valores nulos o None
             def format_val(val, fmt="{:.2f}%"):
-                if val is None or pd.isna(val) or val == "":
-                    return ""
-                if isinstance(val, (int, float)):
-                    return fmt.format(val)
-                return str(val)
+                if val is None or val == "" or pd.isna(val): return ""
+                return fmt.format(val) if isinstance(val, (int, float)) else str(val)
 
             return df.style\
                 .map(lambda x: 'color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x > 100 else '', subset=['TC (%)'])\
                 .map(lambda x: 'background-color: rgba(255, 75, 75, 0.15); color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x < 1 else '', subset=['ICR_IND'])\
                 .apply(lambda x: ['background-color: #1e2130; font-weight: bold; color: #90CAF9' if 'SUB-TOTAL' in str(x.NombreCorto) else '' for i in range(len(x))], axis=1)\
                 .format({
-                    'PrimasNetasCobradas': lambda x: formato_ves(x) if pd.notnull(x) else "",
+                    'PrimasNetasCobradas': lambda x: formato_ves(x) if pd.notnull(x) and x != "" else "",
                     'Mkt (%)': lambda x: format_val(x),
                     'ICR_IND': lambda x: format_val(x, "{:.2f}"),
                     'TC (%)': lambda x: format_val(x), 
@@ -240,70 +236,61 @@ if df_compilado is not None:
 
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
-# --- FUNCIÓN DE RENDERIZADO CON SUB-TOTAL ESTÁTICO Y LIMPIO ---
+        # --- FUNCIÓN DE RENDERIZADO CON EFECTO "TABLA ÚNICA" ---
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
-            # 1. Cálculo de Sub-Total
+            # Cálculo de Sub-Total
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
-            # Preparamos la fila de sub-total (Datos fijos)
+            # Preparar fila de sub-total sin valores nulos visibles
             fila_st_data = {col: "" for col in cols_table}
             fila_st_data['NombreCorto'] = f'SUB-TOTAL {titulo.upper()}'
             fila_st_data['PrimasNetasCobradas'] = suma_pnc
             fila_st_data['Mkt (%)'] = mkt_pct
-            
             df_total_fijo = pd.DataFrame([fila_st_data])
-            df_total_fijo.index = [""] # Queda en blanco como antes
+            df_total_fijo.index = [""] 
 
             c_g, c_t = st.columns([0.25, 0.75])
             
             with c_g:
                 st.write(f"**{titulo}: Primas**")
-                if not df_plot.empty:
-                    fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', 
-                                 color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro,
-                                 custom_data=['Mkt (%)'])
-                    fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Cuota: %{customdata[0]:.2f}%<extra></extra>")
-                    fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, 
-                                      showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
-                    st.plotly_chart(fig, use_container_width=True)
+                fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
+                fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Cuota: %{customdata[0]:.2f}%<extra></extra>")
+                fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
+                st.plotly_chart(fig, use_container_width=True)
             
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 
-                # --- TABLA DE EMPRESAS (ORDENABLE) ---
+                # Ocultar encabezados de la segunda tabla mediante CSS inyectado
+                st.markdown("""
+                    <style>
+                    .stDataFrame [data-testid="stTable"] { margin-bottom: 0px; }
+                    /* Oculta el encabezado de la tabla que sigue inmediatamente a otra */
+                    div[data-testid="stVerticalBlock"] > div + div .stDataFrame thead {
+                        display: none;
+                    }
+                    </style>
+                """, unsafe_allow_html=True)
+
+                # Tabla de Datos (Ordenable)
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 
-                # Eliminamos el espacio inferior (margin) para que la siguiente tabla se pegue
-                st.dataframe(
-                    style_matrix_clean(df_v), 
-                    use_container_width=True, 
-                    height=altura - 45, 
-                    hide_index=False
-                )
+                st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 55)
                 
-                # --- FILA DE SUB-TOTAL (PEGADA Y SIN TÍTULOS) ---
-                # Usamos un contenedor para reducir el espacio entre tablas
-                with st.container():
-                    st.dataframe(
-                        style_matrix_clean(df_total_fijo),
-                        use_container_width=True,
-                        height=41, 
-                        hide_index=False,
-                        column_config={"__index__": ""} # Asegura que el índice no tenga cabecera
-                    )
+                # Tabla de Sub-Total (Fija abajo)
+                st.dataframe(style_matrix_clean(df_total_fijo), use_container_width=True, height=42)
 
-        # --- FLUJO DE LLAMADAS ---
+        # --- FLUJO DE EJECUCIÓN ---
         render_bloque_filtrado(df_ranking.head(10), "Top 10", inicio_ranking=1)
 
         if modo_vista == "Mercado Completo":
             if len(df_ranking) > 10:
                 st.markdown("---")
                 render_bloque_filtrado(df_ranking.iloc[10:20], "11-20", inicio_ranking=11)
-            
             if len(df_ranking) > 20:
                 st.markdown("---")
                 render_bloque_filtrado(df_ranking.iloc[20:], "Resto del Mercado", inicio_ranking=21, altura=600)
