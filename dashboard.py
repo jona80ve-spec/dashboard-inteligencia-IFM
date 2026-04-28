@@ -212,7 +212,7 @@ if df_compilado is not None:
         cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
-        # --- FUNCIÓN DE ESTILO BLINDADA (Elimina 'None' visualmente) ---
+# --- FUNCIÓN DE ESTILO BLINDADA ---
         def style_matrix_clean(df):
             def format_val(val, fmt="{:.2f}%"):
                 if val is None or pd.isna(val) or val == "": return ""
@@ -234,9 +234,10 @@ if df_compilado is not None:
                     'REA (%)': lambda x: format_val(x)
                 })
 
+        # Restauramos tu paleta profesional
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
-        # --- FUNCIÓN DE RENDERIZADO CON FILA ESTÁTICA ---
+        # --- FUNCIÓN DE RENDERIZADO (CON PALETA Y SIN CABECERAS EXTRA) ---
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
@@ -244,7 +245,6 @@ if df_compilado is not None:
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
-            # Fila de subtotal independiente (no se incluye en el orden de la principal)
             fila_st_data = {col: "" for col in cols_table}
             fila_st_data['NombreCorto'] = f'SUB-TOTAL {titulo.upper()}'
             fila_st_data['PrimasNetasCobradas'] = suma_pnc
@@ -255,7 +255,9 @@ if df_compilado is not None:
             c_g, c_t = st.columns([0.25, 0.75])
             with c_g:
                 st.write(f"**{titulo}: Primas**")
-                fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
+                # Aplicamos de nuevo la paleta azul
+                fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', 
+                             color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
                 fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Participación: %{customdata[0]:.2f}%<extra></extra>")
                 fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
                 st.plotly_chart(fig, use_container_width=True)
@@ -263,14 +265,12 @@ if df_compilado is not None:
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 
-                # CSS para "soldar" tablas y ocultar títulos de la de abajo
+                # CSS para eliminar encabezados y pegar tablas
                 st.markdown("""
                     <style>
-                        /* Elimina el espacio entre dataframes */
                         .stDataFrame { margin-bottom: -15px !important; }
-                        
-                        /* Oculta encabezados de la tabla de subtotal (segunda tabla en el contenedor) */
-                        div[data-testid="column"] > div:nth-child(even) div[data-testid="stVerticalBlock"] > div:last-child thead {
+                        /* Selecciona específicamente la segunda tabla para ocultar su cabecera */
+                        div[data-testid="column"]:nth-child(2) div[data-testid="stVerticalBlock"] > div:last-child thead {
                             display: none !important;
                             visibility: hidden !important;
                             height: 0px !important;
@@ -278,12 +278,12 @@ if df_compilado is not None:
                     </style>
                 """, unsafe_allow_html=True)
 
-                # Tabla 1: Empresas (ORDENABLE)
+                # Tabla Principal (Ordenable)
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 45)
                 
-                # Tabla 2: Sub-Total (ESTÁTICA, sin títulos por el CSS)
+                # Tabla Sub-Total (Fija y sin títulos repetidos)
                 st.dataframe(style_matrix_clean(df_total_fijo), use_container_width=True, height=42)
 
         # --- LLAMADAS ---
