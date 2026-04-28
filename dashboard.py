@@ -240,48 +240,68 @@ if df_compilado is not None:
 
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
+# --- FUNCIÓN DE RENDERIZADO CON SUB-TOTAL ESTÁTICO Y LIMPIO ---
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
-            # Sub-Total del Bloque
+            # 1. Cálculo de Sub-Total
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
-            # Creamos la fila de subtotal llenando con strings vacíos en lugar de Nones
+            # Preparamos la fila de sub-total (Datos fijos)
             fila_st_data = {col: "" for col in cols_table}
             fila_st_data['NombreCorto'] = f'SUB-TOTAL {titulo.upper()}'
             fila_st_data['PrimasNetasCobradas'] = suma_pnc
             fila_st_data['Mkt (%)'] = mkt_pct
             
-            fila_st = pd.DataFrame([fila_st_data])
+            df_total_fijo = pd.DataFrame([fila_st_data])
+            df_total_fijo.index = [""] # Queda en blanco como antes
 
             c_g, c_t = st.columns([0.25, 0.75])
+            
             with c_g:
                 st.write(f"**{titulo}: Primas**")
-                fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
-                fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Participación: %{customdata[0]:.2f}%<extra></extra>")
-                fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
-                st.plotly_chart(fig, use_container_width=True)
+                if not df_plot.empty:
+                    fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', 
+                                 color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro,
+                                 custom_data=['Mkt (%)'])
+                    fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Cuota: %{customdata[0]:.2f}%<extra></extra>")
+                    fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, 
+                                      showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
+                    st.plotly_chart(fig, use_container_width=True)
             
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
+                
+                # --- TABLA DE EMPRESAS (ORDENABLE) ---
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 
-                fila_st_final = fila_st[cols_table].copy()
-                fila_st_final.index = [""] 
+                # Mostramos las empresas (esta parte es la que el usuario puede ordenar)
+                st.dataframe(
+                    style_matrix_clean(df_v), 
+                    use_container_width=True, 
+                    height=altura - 52, # Ajuste para que no salga scroll innecesario
+                    hide_index=False
+                )
                 
-                # Concatenamos y enviamos a la tabla
-                df_final = pd.concat([df_v, fila_st_final])
-                st.dataframe(style_matrix_clean(df_final), use_container_width=True, height=altura)
+                # --- TABLA DE SUB-TOTAL (CONGELADA ABAJO) ---
+                # Al ser una tabla distinta, no se ve afectada por el orden de arriba
+                st.dataframe(
+                    style_matrix_clean(df_total_fijo),
+                    use_container_width=True,
+                    height=45, 
+                    hide_index=False
+                )
 
-        # --- LLAMADAS ---
+        # --- FLUJO DE LLAMADAS ---
         render_bloque_filtrado(df_ranking.head(10), "Top 10", inicio_ranking=1)
 
         if modo_vista == "Mercado Completo":
             if len(df_ranking) > 10:
                 st.markdown("---")
                 render_bloque_filtrado(df_ranking.iloc[10:20], "11-20", inicio_ranking=11)
+            
             if len(df_ranking) > 20:
                 st.markdown("---")
                 render_bloque_filtrado(df_ranking.iloc[20:], "Resto del Mercado", inicio_ranking=21, altura=600)
