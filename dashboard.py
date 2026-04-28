@@ -277,22 +277,24 @@ if df_compilado is not None:
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 
-                # Mostramos las empresas (esta parte es la que el usuario puede ordenar)
+                # Eliminamos el espacio inferior (margin) para que la siguiente tabla se pegue
                 st.dataframe(
                     style_matrix_clean(df_v), 
                     use_container_width=True, 
-                    height=altura - 52, # Ajuste para que no salga scroll innecesario
+                    height=altura - 45, 
                     hide_index=False
                 )
                 
-                # --- TABLA DE SUB-TOTAL (CONGELADA ABAJO) ---
-                # Al ser una tabla distinta, no se ve afectada por el orden de arriba
-                st.dataframe(
-                    style_matrix_clean(df_total_fijo),
-                    use_container_width=True,
-                    height=45, 
-                    hide_index=False
-                )
+                # --- FILA DE SUB-TOTAL (PEGADA Y SIN TÍTULOS) ---
+                # Usamos un contenedor para reducir el espacio entre tablas
+                with st.container():
+                    st.dataframe(
+                        style_matrix_clean(df_total_fijo),
+                        use_container_width=True,
+                        height=41, 
+                        hide_index=False,
+                        column_config={"__index__": ""} # Asegura que el índice no tenga cabecera
+                    )
 
         # --- FLUJO DE LLAMADAS ---
         render_bloque_filtrado(df_ranking.head(10), "Top 10", inicio_ranking=1)
