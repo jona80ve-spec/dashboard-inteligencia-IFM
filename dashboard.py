@@ -196,7 +196,7 @@ if df_compilado is not None:
         # Preparación de Ranking
         df_ranking = df_act.copy()
         
-        # 1. Cálculo de Cuota de Mercado Global (2 decimales)
+        # 1. Cálculo de Cuota de Mercado Global (Precisión de 2 decimales)
         total_mercado_pnc = df_ranking['PrimasNetasCobradas'].sum()
         df_ranking['Mkt (%)'] = (df_ranking['PrimasNetasCobradas'] / total_mercado_pnc * 100).fillna(0)
 
@@ -209,11 +209,11 @@ if df_compilado is not None:
         df_ranking['TC (%)'] = df_ranking['Com (%)'] + df_ranking['IA (%)'] + df_ranking['IGA (%)'] + df_ranking['SI (%)'] + df_ranking['REA (%)']
         df_ranking['ICR_IND'] = (df_ranking['InversionesAptas'] / df_ranking['ReservasTecnicas']).fillna(0)
 
-        # Columnas y orden
+        # Definición de columnas y orden descendente por Primas
         cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
-        # --- FUNCIÓN DE ESTILO (Ajustada a 2 decimales y enumeración limpia) ---
+        # --- FUNCIÓN DE ESTILO (Alertas y Formato 2 Decimales) ---
         def style_matrix_clean(df):
             return df.style\
                 .map(lambda x: 'color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x > 100 else '', subset=['TC (%)'])\
@@ -221,7 +221,7 @@ if df_compilado is not None:
                 .apply(lambda x: ['background-color: #1e2130; font-weight: bold; color: #90CAF9' if 'SUB-TOTAL' in str(x.NombreCorto) else '' for i in range(len(x))], axis=1)\
                 .format({
                     'PrimasNetasCobradas': lambda x: formato_ves(x) if pd.notnull(x) else "",
-                    'Mkt (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else "", # 2 decimales
+                    'Mkt (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else "",
                     'ICR_IND': lambda x: f"{x:.2f}" if pd.notnull(x) else "",
                     'TC (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else "", 
                     'SI (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else "", 
@@ -233,47 +233,70 @@ if df_compilado is not None:
 
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
-        def render_bloque_filtrado(df_sub, titulo, altura=450):
+        # --- FUNCIÓN DE RENDERIZADO CON INICIO DINÁMICO ---
+        def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
-            # Sub-Total del bloque
+            # Cálculo de Sub-Total del bloque
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
-            fila_st = pd.DataFrame({'NombreCorto': [f'SUB-TOTAL {titulo.upper()}'], 'PrimasNetasCobradas': [suma_pnc], 'Mkt (%)': [mkt_pct]})
+            fila_st = pd.DataFrame({
+                'NombreCorto': [f'SUB-TOTAL {titulo.upper()}'],
+                'PrimasNetasCobradas': [suma_pnc],
+                'Mkt (%)': [mkt_pct]
+            })
             for col in cols_table:
-                if col not in fila_st.columns: fila_st[col] = None
+                if col not in fila_st.columns:
+                    fila_st[col] = None
 
             c_g, c_t = st.columns([0.25, 0.75])
+            
             with c_g:
                 st.write(f"**{titulo}: Primas**")
                 if not df_plot.empty:
-                    fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
-                    fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Cuota: %{customdata[0]:.2f}%<extra></extra>")
-                    fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
+                    fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', 
+                                 color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro,
+                                 custom_data=['Mkt (%)'])
+                    
+                    fig.update_traces(
+                        hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Cuota: %{customdata[0]:.2f}%<extra></extra>"
+                    )
+                    fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, 
+                                      showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
                     st.plotly_chart(fig, use_container_width=True)
-            
+                else:
+                    st.info("Sin datos.")
+                    
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
-                # Ajuste de índices: Empresas 1-10, Sub-total vacío
                 df_v = df_sub[cols_table].copy()
-                df_v.index = range(1, len(df_v) + 1)
                 
+                # Ajuste de índice correlativo dinámico
+                df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
+                
+                # Fila de sub-total con índice vacío para limpieza visual
                 fila_st_final = fila_st[cols_table].copy()
                 fila_st_final.index = [""] 
                 
                 df_final = pd.concat([df_v, fila_st_final])
                 st.dataframe(style_matrix_clean(df_final), use_container_width=True, height=altura)
 
-        # Renderizado
-        render_bloque_filtrado(df_ranking.head(10), "Top 10")
+        # --- FLUJO DE RENDERIZADO FINAL ---
+        
+        # Bloque 1: Siempre se muestra, arranca en 1
+        render_bloque_filtrado(df_ranking.head(10), "Top 10", inicio_ranking=1)
+
         if modo_vista == "Mercado Completo":
             if len(df_ranking) > 10:
                 st.markdown("---")
-                render_bloque_filtrado(df_ranking.iloc[10:20], "11-20")
+                # Bloque 2: Arranca en 11
+                render_bloque_filtrado(df_ranking.iloc[10:20], "11-20", inicio_ranking=11)
+            
             if len(df_ranking) > 20:
                 st.markdown("---")
-                render_bloque_filtrado(df_ranking.iloc[20:], "Resto del Mercado", altura=600)
+                # Bloque 3: Arranca en 21
+                render_bloque_filtrado(df_ranking.iloc[20:], "Resto del Mercado", inicio_ranking=21, altura=600)
 
 # ======================================================================
 # SECCIÓN: SERIE TEMPORAL (HISTÓRICO MENSUAL DINÁMICO Y COMPARATIVO)
