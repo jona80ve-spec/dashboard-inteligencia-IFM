@@ -14,32 +14,24 @@ st.set_page_config(
 )
 st.markdown("""
     <style>
-    /* 1. Ocultar el Header (esto ya te funcionó) */
+    /* 1. Fondo y Métricas */
+    .main {background-color: #0e1117;}
+    .stMetric {background-color: #1e2130; padding: 20px; border-radius: 12px;}
+
+    /* 2. Ocultar TODO lo que sobra (Header, Footer, Botones) */
     header {visibility: hidden;}
-    
-    /* 2. Ocultar el Footer (Made with Streamlit) */
     footer {visibility: hidden;}
-
-    /* 3. ELIMINAR LOS BOTONES INFERIORES (Corona y Status) */
-    /* Usamos 'display: none' con '!important' para forzar el borrado */
+    #viewerBadge {display: none;} /* Quita la corona roja */
+    .stAppDeployButton {display: none;} /* Quita botones de despliegue */
     
-    [data-testid="stStatusWidget"], 
-    #viewerBadge, 
-    .stAppDeployButton,
-    [data-testid="stManageAppButton"] {
-        display: none !important;
-    }
-
-    /* Quitar el contenedor flotante de la esquina inferior derecha */
-    .stApp > div:last-child {
-        display: none !important;
-    }
-
-    /* 4. Bloquear el menú lateral */
+    /* 3. Bloquear el menú lateral (quitar la X) */
     [data-testid="sidebar-close-button"], 
     [data-testid="stSidebarCollapseButton"] {
         display: none !important;
     }
+
+    /* 4. Ajustar espacio para que se vea Pro */
+    .block-container {padding-top: 0rem;}
     </style>
     """, unsafe_allow_html=True)
 # =================================================================
