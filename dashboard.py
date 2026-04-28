@@ -212,7 +212,7 @@ if df_compilado is not None:
         cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
-# --- FUNCIÓN DE ESTILO (Negrita para Subtotal y colores) ---
+# --- FUNCIÓN DE ESTILO (Colores y Negritas) ---
         def style_matrix_clean(df):
             def format_val(val, fmt="{:.2f}%"):
                 if val is None or pd.isna(val) or val == "": return ""
@@ -236,11 +236,11 @@ if df_compilado is not None:
 
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
-        # --- FUNCIÓN DE RENDERIZADO (Fila de subtotal anclada) ---
+        # --- FUNCIÓN DE RENDERIZADO (Subtotal Anclado e Invisible) ---
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
-            # 1. Preparar Sub-Total en un DataFrame independiente
+            # Preparar Sub-Total Independiente (No se mezcla al ordenar)
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
@@ -250,7 +250,7 @@ if df_compilado is not None:
             fila_st_data['Mkt (%)'] = mkt_pct
             
             df_total_fijo = pd.DataFrame([fila_st_data])
-            df_total_fijo.index = [" "] # Índice vacío, sin signos extra
+            df_total_fijo.index = [" "] # Índice vacío para limpieza total
 
             c_g, c_t = st.columns([0.25, 0.75])
             with c_g:
@@ -263,24 +263,32 @@ if df_compilado is not None:
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 
-                # CSS para eliminar encabezados y pegar las tablas visualmente
+                # CSS para ELIMINAR la fila de encabezados señalada
                 st.markdown("""
                     <style>
-                        .stDataFrame { margin-bottom: -1px !important; }
-                        /* Oculta la cabecera de la tabla inferior (subtotal) */
+                        /* Une las tablas físicamente */
+                        .stDataFrame { margin-bottom: -15px !important; }
+                        
+                        /* FUERZA la desaparición del encabezado de la tabla de subtotal */
                         div[data-testid="column"]:nth-child(2) div[data-testid="stVerticalBlock"] > div:last-child .stDataFrame thead {
                             display: none !important;
                             visibility: hidden !important;
+                            height: 0px !important;
+                            line-height: 0px !important;
+                        }
+                        /* Ajuste fino para quitar el borde superior de la tabla de abajo */
+                        div[data-testid="column"]:nth-child(2) div[data-testid="stVerticalBlock"] > div:last-child .stDataFrame {
+                            border-top: none !important;
                         }
                     </style>
                 """, unsafe_allow_html=True)
 
-                # Tabla 1: Datos que el usuario SI puede ordenar
+                # Tabla 1: Datos de Empresas (ORDENABLE por el usuario)
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 45)
                 
-                # Tabla 2: Sub-Total (Fijo abajo, no se ve afectado por el orden de arriba)
+                # Tabla 2: Sub-Total (ESTÁTICA, sin títulos repetidos)
                 st.dataframe(style_matrix_clean(df_total_fijo), use_container_width=True, height=42)
 
         # --- FLUJO DE LLAMADAS ---
