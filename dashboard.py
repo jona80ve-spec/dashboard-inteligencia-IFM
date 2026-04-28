@@ -212,7 +212,7 @@ if df_compilado is not None:
         cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
-        # --- FUNCIÓN DE ESTILO BLINDADA ---
+        # --- FUNCIÓN DE ESTILO BLINDADA (Elimina 'None' visualmente) ---
         def style_matrix_clean(df):
             def format_val(val, fmt="{:.2f}%"):
                 if val is None or pd.isna(val) or val == "": return ""
@@ -244,7 +244,7 @@ if df_compilado is not None:
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
-            # Fila de subtotal independiente
+            # Fila de subtotal independiente (no se incluye en el orden de la principal)
             fila_st_data = {col: "" for col in cols_table}
             fila_st_data['NombreCorto'] = f'SUB-TOTAL {titulo.upper()}'
             fila_st_data['PrimasNetasCobradas'] = suma_pnc
@@ -263,24 +263,27 @@ if df_compilado is not None:
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 
-                # Inyección de CSS para ocultar encabezados de la tabla de subtotal y pegarlas
+                # CSS para "soldar" tablas y ocultar títulos de la de abajo
                 st.markdown("""
                     <style>
-                        .stDataFrame { margin-bottom: -2px !important; }
-                        /* Oculta el encabezado de la tabla de subtotal que sigue a la principal */
-                        div[data-testid="stVerticalBlock"] > div:last-child .stDataFrame thead {
+                        /* Elimina el espacio entre dataframes */
+                        .stDataFrame { margin-bottom: -15px !important; }
+                        
+                        /* Oculta encabezados de la tabla de subtotal (segunda tabla en el contenedor) */
+                        div[data-testid="column"] > div:nth-child(even) div[data-testid="stVerticalBlock"] > div:last-child thead {
                             display: none !important;
                             visibility: hidden !important;
+                            height: 0px !important;
                         }
                     </style>
                 """, unsafe_allow_html=True)
 
-                # Tabla 1: Datos de Empresas (ORDENABLE)
+                # Tabla 1: Empresas (ORDENABLE)
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 45)
                 
-                # Tabla 2: Sub-Total (ESTÁTICA, no se mueve al ordenar la de arriba)
+                # Tabla 2: Sub-Total (ESTÁTICA, sin títulos por el CSS)
                 st.dataframe(style_matrix_clean(df_total_fijo), use_container_width=True, height=42)
 
         # --- LLAMADAS ---
