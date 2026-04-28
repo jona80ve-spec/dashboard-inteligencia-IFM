@@ -236,60 +236,52 @@ if df_compilado is not None:
 
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
-        # --- FUNCIÓN DE RENDERIZADO (Subtotal Anclado e Invisible) ---
+# --- FUNCIÓN DE RENDERIZADO (Versión Resumen Limpio) ---
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
-            # Preparar Sub-Total Independiente (No se mezcla al ordenar)
+            # 1. Preparación de Datos del Sub-Total
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
-            fila_st_data = {col: "" for col in cols_table}
-            fila_st_data['NombreCorto'] = f'SUB-TOTAL {titulo.upper()}'
-            fila_st_data['PrimasNetasCobradas'] = suma_pnc
-            fila_st_data['Mkt (%)'] = mkt_pct
-            
-            df_total_fijo = pd.DataFrame([fila_st_data])
-            df_total_fijo.index = [" "] # Índice vacío para limpieza total
+            # 2. Creación de la mini-tabla de 4 columnas (Index, Nombre, Primas, Mkt)
+            df_resumen = pd.DataFrame({
+                'NombreCorto': [f'SUB-TOTAL {titulo.upper()}'],
+                'PrimasNetasCobradas': [formato_ves(suma_pnc)],
+                'Mkt (%)': [f"{mkt_pct:.2f}%"]
+            })
+            # El índice de la tabla de resumen lo dejamos vacío o con un punto para limpieza visual
+            df_resumen.index = ["•"]
 
             c_g, c_t = st.columns([0.25, 0.75])
+            
             with c_g:
                 st.write(f"**{titulo}: Primas**")
-                fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
-                fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Participación: %{customdata[0]:.2f}%<extra></extra>")
+                fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', 
+                             color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro)
                 fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
                 st.plotly_chart(fig, use_container_width=True)
             
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 
-                # CSS para ELIMINAR la fila de encabezados señalada
+                # TABLA PRINCIPAL (Indicadores completos y Ordenable)
+                df_v = df_sub[cols_table].copy()
+                df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
+                st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 95)
+                
+                # SECCIÓN DE TOTAL (Limpia y Estática)
                 st.markdown("""
                     <style>
-                        /* Une las tablas físicamente */
-                        .stDataFrame { margin-bottom: -15px !important; }
-                        
-                        /* FUERZA la desaparición del encabezado de la tabla de subtotal */
-                        div[data-testid="column"]:nth-child(2) div[data-testid="stVerticalBlock"] > div:last-child .stDataFrame thead {
-                            display: none !important;
-                            visibility: hidden !important;
-                            height: 0px !important;
-                            line-height: 0px !important;
-                        }
-                        /* Ajuste fino para quitar el borde superior de la tabla de abajo */
-                        div[data-testid="column"]:nth-child(2) div[data-testid="stVerticalBlock"] > div:last-child .stDataFrame {
-                            border-top: none !important;
+                        /* Estilo para que la tabla de resumen se parezca a la de arriba */
+                        .stTable { 
+                            background-color: rgba(144, 202, 249, 0.05); 
+                            border-radius: 5px;
                         }
                     </style>
                 """, unsafe_allow_html=True)
-
-                # Tabla 1: Datos de Empresas (ORDENABLE por el usuario)
-                df_v = df_sub[cols_table].copy()
-                df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
-                st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 45)
                 
-                # Tabla 2: Sub-Total (ESTÁTICA, sin títulos repetidos)
-                st.dataframe(style_matrix_clean(df_total_fijo), use_container_width=True, height=42)
+                st.table(df_resumen)
 
         # --- FLUJO DE LLAMADAS ---
         render_bloque_filtrado(df_ranking.head(10), "Top 10", inicio_ranking=1)
