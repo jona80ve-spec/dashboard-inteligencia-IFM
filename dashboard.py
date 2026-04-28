@@ -522,8 +522,7 @@ if df_compilado is not None:
             
             # Desacumular ramos
             df_mensual_real = df_evol[columnas_ramos].diff().fillna(df_evol[columnas_ramos].iloc[0])
-            df_mensual_real = df_mensual_real.clip(lower=0)
-            
+                       
             total_pnc_mensual = df_mensual_real[columnas_ramos].sum(axis=1)
             
             # Identificar Top 6 (Excluyendo Fianza)
