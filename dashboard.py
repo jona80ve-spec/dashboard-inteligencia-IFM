@@ -200,7 +200,7 @@ if df_compilado is not None:
         total_mercado_pnc = df_ranking['PrimasNetasCobradas'].sum()
         df_ranking['Mkt (%)'] = (df_ranking['PrimasNetasCobradas'] / total_mercado_pnc * 100).fillna(0)
 
-        # 2. Ratios Técnicos
+        # 2. Ratios Técnicos (Cálculos base)
         df_ranking['Com (%)'] = (df_ranking['Comisiones'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
         df_ranking['IA (%)'] = (df_ranking['GastosdeAdquision'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
         df_ranking['IGA (%)'] = (df_ranking['Gastosdeadministracion'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
@@ -212,45 +212,56 @@ if df_compilado is not None:
         cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
-        # --- FUNCIÓN DE ESTILO (CORREGIDA PARA OCULTAR 'NONE') ---
+        # --- FUNCIÓN DE ESTILO BLINDADA (Elimina 'None' visualmente) ---
         def style_matrix_clean(df):
+            # Usamos un formateador que maneja explícitamente los valores nulos o None
+            def format_val(val, fmt="{:.2f}%"):
+                if val is None or pd.isna(val) or val == "":
+                    return ""
+                if isinstance(val, (int, float)):
+                    return fmt.format(val)
+                return str(val)
+
             return df.style\
                 .map(lambda x: 'color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x > 100 else '', subset=['TC (%)'])\
                 .map(lambda x: 'background-color: rgba(255, 75, 75, 0.15); color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x < 1 else '', subset=['ICR_IND'])\
                 .apply(lambda x: ['background-color: #1e2130; font-weight: bold; color: #90CAF9' if 'SUB-TOTAL' in str(x.NombreCorto) else '' for i in range(len(x))], axis=1)\
                 .format({
                     'PrimasNetasCobradas': lambda x: formato_ves(x) if pd.notnull(x) else "",
-                    'Mkt (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else "",
-                    'ICR_IND': lambda x: f"{x:.2f}" if pd.notnull(x) else "",
-                    'TC (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else "", 
-                    'SI (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else "", 
-                    'Com (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else "",
-                    'IA (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else "", 
-                    'IGA (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else "", 
-                    'REA (%)': lambda x: f"{x:.2f}%" if pd.notnull(x) else ""
-                }, na_rep="") # na_rep="" es el seguro adicional para valores nulos
+                    'Mkt (%)': lambda x: format_val(x),
+                    'ICR_IND': lambda x: format_val(x, "{:.2f}"),
+                    'TC (%)': lambda x: format_val(x), 
+                    'SI (%)': lambda x: format_val(x), 
+                    'Com (%)': lambda x: format_val(x),
+                    'IA (%)': lambda x: format_val(x), 
+                    'IGA (%)': lambda x: format_val(x), 
+                    'REA (%)': lambda x: format_val(x)
+                })
 
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
-            # Sub-Total
+            # Sub-Total del Bloque
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
-            fila_st = pd.DataFrame({'NombreCorto': [f'SUB-TOTAL {titulo.upper()}'], 'PrimasNetasCobradas': [suma_pnc], 'Mkt (%)': [mkt_pct]})
-            for col in cols_table:
-                if col not in fila_st.columns: fila_st[col] = None
+            # Creamos la fila de subtotal llenando con strings vacíos en lugar de Nones
+            fila_st_data = {col: "" for col in cols_table}
+            fila_st_data['NombreCorto'] = f'SUB-TOTAL {titulo.upper()}'
+            fila_st_data['PrimasNetasCobradas'] = suma_pnc
+            fila_st_data['Mkt (%)'] = mkt_pct
+            
+            fila_st = pd.DataFrame([fila_st_data])
 
             c_g, c_t = st.columns([0.25, 0.75])
             with c_g:
                 st.write(f"**{titulo}: Primas**")
-                if not df_plot.empty:
-                    fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
-                    fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Cuota: %{customdata[0]:.2f}%<extra></extra>")
-                    fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
-                    st.plotly_chart(fig, use_container_width=True)
+                fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
+                fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Cuota: %{customdata[0]:.2f}%<extra></extra>")
+                fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
+                st.plotly_chart(fig, use_container_width=True)
             
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
@@ -260,8 +271,8 @@ if df_compilado is not None:
                 fila_st_final = fila_st[cols_table].copy()
                 fila_st_final.index = [""] 
                 
+                # Concatenamos y enviamos a la tabla
                 df_final = pd.concat([df_v, fila_st_final])
-                # Renderizamos la tabla
                 st.dataframe(style_matrix_clean(df_final), use_container_width=True, height=altura)
 
         # --- LLAMADAS ---
