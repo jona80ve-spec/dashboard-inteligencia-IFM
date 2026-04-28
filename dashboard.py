@@ -259,7 +259,7 @@ if df_compilado is not None:
             with c_g:
                 st.write(f"**{titulo}: Primas**")
                 fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
-                fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Cuota: %{customdata[0]:.2f}%<extra></extra>")
+                fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Participación: %{customdata[0]:.2f}%<extra></extra>")
                 fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
                 st.plotly_chart(fig, use_container_width=True)
             
