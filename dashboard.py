@@ -234,14 +234,13 @@ if df_compilado is not None:
                     'REA (%)': lambda x: format_val(x)
                 })
 
-        # Restauramos tu paleta profesional
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
-        # --- FUNCIÓN DE RENDERIZADO (CON PALETA Y SIN CABECERAS EXTRA) ---
+        # --- FUNCIÓN DE RENDERIZADO CON "ANCLAJE" DE SUBTOTAL ---
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
-            # Cálculo de Sub-Total
+            # 1. Creamos el Sub-Total aparte (para que NO se mueva al ordenar)
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
@@ -250,14 +249,12 @@ if df_compilado is not None:
             fila_st_data['PrimasNetasCobradas'] = suma_pnc
             fila_st_data['Mkt (%)'] = mkt_pct
             df_total_fijo = pd.DataFrame([fila_st_data])
-            df_total_fijo.index = [""] 
+            df_total_fijo.index = ["Σ"] # Usamos un símbolo para diferenciarlo
 
             c_g, c_t = st.columns([0.25, 0.75])
             with c_g:
                 st.write(f"**{titulo}: Primas**")
-                # Aplicamos de nuevo la paleta azul
-                fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', 
-                             color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
+                fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, custom_data=['Mkt (%)'])
                 fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Participación: %{customdata[0]:.2f}%<extra></extra>")
                 fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
                 st.plotly_chart(fig, use_container_width=True)
@@ -265,12 +262,12 @@ if df_compilado is not None:
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 
-                # CSS para eliminar encabezados y pegar tablas
+                # CSS para ocultar el encabezado de la segunda tabla y pegarla a la primera
                 st.markdown("""
                     <style>
-                        .stDataFrame { margin-bottom: -15px !important; }
-                        /* Selecciona específicamente la segunda tabla para ocultar su cabecera */
-                        div[data-testid="column"]:nth-child(2) div[data-testid="stVerticalBlock"] > div:last-child thead {
+                        .stDataFrame { margin-bottom: -1px !important; }
+                        /* Oculta encabezados de la tabla de subtotal */
+                        div[data-testid="column"]:nth-child(2) div[data-testid="stVerticalBlock"] > div:last-child .stDataFrame thead {
                             display: none !important;
                             visibility: hidden !important;
                             height: 0px !important;
@@ -278,12 +275,13 @@ if df_compilado is not None:
                     </style>
                 """, unsafe_allow_html=True)
 
-                # Tabla Principal (Ordenable)
+                # TABLA SUPERIOR: Datos de Empresas (ORDENABLE)
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 45)
                 
-                # Tabla Sub-Total (Fija y sin títulos repetidos)
+                # TABLA INFERIOR: Solo el Sub-Total (ESTÁTICA)
+                # Al estar en un objeto st.dataframe distinto, NO se mueve cuando el usuario ordena arriba.
                 st.dataframe(style_matrix_clean(df_total_fijo), use_container_width=True, height=42)
 
         # --- LLAMADAS ---
