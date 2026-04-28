@@ -189,12 +189,18 @@ if df_compilado is not None:
 
         st.markdown("---")
 
-    # --- 4. MONITOR POR INSTITUCIÓN ---
+# --- 4. MONITOR POR INSTITUCIÓN ---
         st.subheader("⚖️ Monitor de Gestión Técnica")
         modo_vista = st.radio("Filtro visual:", ["Top 10 por PNC", "Mercado Completo"], horizontal=True)
 
         # Preparación de Ranking
         df_ranking = df_act.copy()
+        
+        # 1. Cálculo de Cuota de Mercado Global
+        total_mercado_pnc = df_ranking['PrimasNetasCobradas'].sum()
+        df_ranking['Mkt (%)'] = (df_ranking['PrimasNetasCobradas'] / total_mercado_pnc * 100).fillna(0)
+
+        # 2. Ratios Técnicos
         df_ranking['Com (%)'] = (df_ranking['Comisiones'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
         df_ranking['IA (%)'] = (df_ranking['GastosdeAdquision'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
         df_ranking['IGA (%)'] = (df_ranking['Gastosdeadministracion'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
@@ -203,47 +209,77 @@ if df_compilado is not None:
         df_ranking['TC (%)'] = df_ranking['Com (%)'] + df_ranking['IA (%)'] + df_ranking['IGA (%)'] + df_ranking['SI (%)'] + df_ranking['REA (%)']
         df_ranking['ICR_IND'] = (df_ranking['InversionesAptas'] / df_ranking['ReservasTecnicas']).fillna(0)
 
-        cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
+        # Definición de columnas (Incluyendo Mkt %)
+        cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
-        # --- FUNCIÓN DE ESTILO SIN DEGRADADO (Solo alertas rojas) ---
+        # --- FUNCIÓN DE ESTILO (Alertas Rojas y Resaltado de Sub-Total) ---
         def style_matrix_clean(df):
             return df.style\
-                .map(lambda x: 'color: #ff4b4b; font-weight: bold' if x > 100 else '', subset=['TC (%)'])\
-                .map(lambda x: 'background-color: rgba(255, 75, 75, 0.15); color: #ff4b4b; font-weight: bold' if x < 1 else '', subset=['ICR_IND'])\
+                .map(lambda x: 'color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x > 100 else '', subset=['TC (%)'])\
+                .map(lambda x: 'background-color: rgba(255, 75, 75, 0.15); color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x < 1 else '', subset=['ICR_IND'])\
+                .apply(lambda x: ['background-color: #1e2130; font-weight: bold; color: #90CAF9' if 'SUB-TOTAL' in str(x.NombreCorto) else '' for i in range(len(x))], axis=1)\
                 .format({
-                    'PrimasNetasCobradas': lambda x: formato_ves(x),
-                    'ICR_IND': '{:.2f}',
-                    'TC (%)': '{:.1f}%', 'SI (%)': '{:.1f}%', 'Com (%)': '{:.1f}%',
-                    'IA (%)': '{:.1f}%', 'IGA (%)': '{:.1f}%', 'REA (%)': '{:.1f}%'
+                    'PrimasNetasCobradas': lambda x: formato_ves(x) if pd.notnull(x) else "",
+                    'Mkt (%)': lambda x: f"{x:.1f}%" if pd.notnull(x) else "",
+                    'ICR_IND': lambda x: f"{x:.2f}" if pd.notnull(x) else "",
+                    'TC (%)': lambda x: f"{x:.1f}%" if pd.notnull(x) else "", 
+                    'SI (%)': lambda x: f"{x:.1f}%" if pd.notnull(x) else "", 
+                    'Com (%)': lambda x: f"{x:.1f}%" if pd.notnull(x) else "",
+                    'IA (%)': lambda x: f"{x:.1f}%" if pd.notnull(x) else "", 
+                    'IGA (%)': lambda x: f"{x:.1f}%" if pd.notnull(x) else "", 
+                    'REA (%)': lambda x: f"{x:.1f}%" if pd.notnull(x) else ""
                 })
 
-        # Paleta para el gráfico de barras (ahora la aplicamos solo al gráfico)
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
         def render_bloque_filtrado(df_sub, titulo, altura=450):
-            # FILTRO CRÍTICO: No graficar PNC <= 0
+            # Filtro para gráfico (solo positivos)
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
+            # --- LÓGICA DE SUB-TOTAL ---
+            suma_pnc = df_sub['PrimasNetasCobradas'].sum()
+            mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
+            
+            fila_st = pd.DataFrame({
+                'NombreCorto': [f'SUB-TOTAL {titulo.upper()}'],
+                'PrimasNetasCobradas': [suma_pnc],
+                'Mkt (%)': [mkt_pct]
+            })
+            # Rellenar el resto de columnas con None para que no salgan ceros feos
+            for col in cols_table:
+                if col not in fila_st.columns:
+                    fila_st[col] = None
+
             c_g, c_t = st.columns([0.25, 0.75])
+            
             with c_g:
                 st.write(f"**{titulo}: Primas**")
                 if not df_plot.empty:
                     fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', 
-                                color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro)
-                    fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
+                                 color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro,
+                                 custom_data=['Mkt (%)'])
+                    
+                    # Formato del hover estandarizado Bs. 1.000,00
+                    fig.update_traces(
+                        hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Cuota: %{customdata[0]:.1f}%<extra></extra>"
+                    )
+                    fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, 
+                                      showlegend=False, coloraxis_showscale=False, margin=dict(t=20, b=20))
                     st.plotly_chart(fig, use_container_width=True)
                 else:
-                    st.info("Sin datos para graficar.")
+                    st.info("Sin datos.")
                     
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 df_v = df_sub[cols_table].copy()
                 df_v.index += 1
-                # Usamos la función de estilo limpia (sin azul en la tabla)
-                st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura, hide_index=False)
+                
+                # Unir datos con fila de sub-total
+                df_final = pd.concat([df_v, fila_st[cols_table]], ignore_index=True)
+                st.dataframe(style_matrix_clean(df_final), use_container_width=True, height=altura, hide_index=False)
 
-        # Renderizado
+        # --- Renderizado de bloques ---
         render_bloque_filtrado(df_ranking.head(10), "Top 10")
 
         if modo_vista == "Mercado Completo":
@@ -252,7 +288,6 @@ if df_compilado is not None:
                 render_bloque_filtrado(df_ranking.iloc[10:20], "11-20")
             if len(df_ranking) > 20:
                 st.markdown("---")
-                # Para el resto, el filtro de > 0 es vital para que la barra no se llene de ceros
                 render_bloque_filtrado(df_ranking.iloc[20:], "Resto del Mercado", altura=600)
 
 # ======================================================================
