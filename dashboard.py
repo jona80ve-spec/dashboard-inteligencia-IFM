@@ -212,31 +212,7 @@ if df_compilado is not None:
         cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
-# --- FUNCIÓN DE ESTILO (Colores y Negritas) ---
-        def style_matrix_clean(df):
-            def format_val(val, fmt="{:.2f}%"):
-                if val is None or pd.isna(val) or val == "": return ""
-                return fmt.format(val) if isinstance(val, (int, float)) else str(val)
-
-            return df.style\
-                .map(lambda x: 'color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x > 100 else '', subset=['TC (%)'])\
-                .map(lambda x: 'background-color: rgba(255, 75, 75, 0.15); color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x < 1 else '', subset=['ICR_IND'])\
-                .apply(lambda x: ['background-color: #1e2130; font-weight: bold; color: #90CAF9' if 'SUB-TOTAL' in str(x.NombreCorto) else '' for i in range(len(x))], axis=1)\
-                .format({
-                    'PrimasNetasCobradas': lambda x: formato_ves(x) if pd.notnull(x) and x != "" else "",
-                    'Mkt (%)': lambda x: format_val(x),
-                    'ICR_IND': lambda x: format_val(x, "{:.2f}"),
-                    'TC (%)': lambda x: format_val(x), 
-                    'SI (%)': lambda x: format_val(x), 
-                    'Com (%)': lambda x: format_val(x),
-                    'IA (%)': lambda x: format_val(x), 
-                    'IGA (%)': lambda x: format_val(x), 
-                    'REA (%)': lambda x: format_val(x)
-                })
-
-        paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
-
-# --- FUNCIÓN DE RENDERIZADO (Con Subtotal Azul Vibrante) ---
+# --- FUNCIÓN DE RENDERIZADO (Subtotal con Texto Azul) ---
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
@@ -244,7 +220,7 @@ if df_compilado is not None:
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
-            # 2. Mini-tabla de 3 columnas (NombreCorto, Primas, Mkt)
+            # 2. Mini-tabla de 3 columnas
             df_resumen = pd.DataFrame({
                 'NombreCorto': [f'SUB-TOTAL {titulo.upper()}'],
                 'PrimasNetasCobradas': [formato_ves(suma_pnc)],
@@ -264,23 +240,22 @@ if df_compilado is not None:
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 
-                # Tabla principal
+                # Tabla superior (Sin cambios)
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 95)
                 
-                # --- APLICACIÓN DEL COLOR AZUL SOLICITADO ---
+                # --- CSS ESPECÍFICO PARA EL SUB-TOTAL (SOLO CONTENIDO) ---
                 st.markdown("""
                     <style>
-                        /* Seleccionamos la tabla de resumen y aplicamos el azul */
-                        div[data-testid="stTable"] td {
+                        /* Apunta solo a las celdas de datos de la tabla de resumen */
+                        div[data-testid="stTable"] tbody td {
                             color: #64B5F6 !important;
                             font-weight: bold !important;
-                            background-color: rgba(33, 150, 243, 0.05) !important;
                         }
-                        /* Mantenemos los encabezados de la mini-tabla discretos */
-                        div[data-testid="stTable"] th {
-                            color: #90CAF9 !important;
+                        /* Mantiene los encabezados originales (th) */
+                        div[data-testid="stTable"] thead th {
+                            color: inherit !important;
                         }
                     </style>
                 """, unsafe_allow_html=True)
