@@ -236,22 +236,21 @@ if df_compilado is not None:
 
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
 
-# --- FUNCIÓN DE RENDERIZADO (Versión Resumen Limpio) ---
+# --- FUNCIÓN DE RENDERIZADO (Con Subtotal Azul Vibrante) ---
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=450):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
             
-            # 1. Preparación de Datos del Sub-Total
+            # 1. Preparación de Datos
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
             mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             
-            # 2. Creación de la mini-tabla de 4 columnas (Index, Nombre, Primas, Mkt)
+            # 2. Mini-tabla de 3 columnas (NombreCorto, Primas, Mkt)
             df_resumen = pd.DataFrame({
                 'NombreCorto': [f'SUB-TOTAL {titulo.upper()}'],
                 'PrimasNetasCobradas': [formato_ves(suma_pnc)],
                 'Mkt (%)': [f"{mkt_pct:.2f}%"]
             })
-            # El índice de la tabla de resumen lo dejamos vacío o con un punto para limpieza visual
-            df_resumen.index = ["•"]
+            df_resumen.index = [""] 
 
             c_g, c_t = st.columns([0.25, 0.75])
             
@@ -265,18 +264,23 @@ if df_compilado is not None:
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
                 
-                # TABLA PRINCIPAL (Indicadores completos y Ordenable)
+                # Tabla principal
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 95)
                 
-                # SECCIÓN DE TOTAL (Limpia y Estática)
+                # --- APLICACIÓN DEL COLOR AZUL SOLICITADO ---
                 st.markdown("""
                     <style>
-                        /* Estilo para que la tabla de resumen se parezca a la de arriba */
-                        .stTable { 
-                            background-color: rgba(144, 202, 249, 0.05); 
-                            border-radius: 5px;
+                        /* Seleccionamos la tabla de resumen y aplicamos el azul */
+                        div[data-testid="stTable"] td {
+                            color: #64B5F6 !important;
+                            font-weight: bold !important;
+                            background-color: rgba(33, 150, 243, 0.05) !important;
+                        }
+                        /* Mantenemos los encabezados de la mini-tabla discretos */
+                        div[data-testid="stTable"] th {
+                            color: #90CAF9 !important;
                         }
                     </style>
                 """, unsafe_allow_html=True)
