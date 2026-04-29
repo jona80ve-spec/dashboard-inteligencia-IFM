@@ -14,26 +14,28 @@ st.set_page_config(
 )
 st.markdown("""
     <style>
-    /* 1. Fondo y Métricas */
+    /* 1. Fondo y Métricas (Mantenemos tu estilo Pro) */
     .main {background-color: #0e1117;}
     .stMetric {background-color: #1e2130; padding: 20px; border-radius: 12px;}
 
-    /* 2. Ocultar TODO lo que sobra (Header, Footer, Botones) */
+    /* 2. Ocultar elementos innecesarios */
     header {visibility: hidden;}
     footer {visibility: hidden;}
-    #viewerBadge {display: none;} /* Quita la corona roja */
-    .stAppDeployButton {display: none;} /* Quita botones de despliegue */
-    
-    /* 3. Bloquear el menú lateral (quitar la X) */
-    [data-testid="sidebar-close-button"], 
-    [data-testid="stSidebarCollapseButton"] {
-        display: none !important;
+    #viewerBadge {display: none;}
+    .stAppDeployButton {display: none;}
+
+    /* 3. MENÚ INTELIGENTE: Bloqueado en PC, funcional en Móvil */
+    @media (min-width: 768px) {
+        [data-testid="sidebar-close-button"],
+        [data-testid="stSidebarCollapseButton"] {
+            display: none !important;
+        }
     }
 
-    /* 4. Ajustar espacio para que se vea Pro */
-    .block-container {padding-top: 0rem;}
+    /* 4. Ajustar espacio superior */
+    .block-container {padding-top: 1rem;}
     </style>
-    """, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 # --- INICIALIZACIÓN DE SESSION STATE (Al inicio del archivo) ---
 if 'empresa_memoria' not in st.session_state:
     # Definimos la empresa inicial por defecto
