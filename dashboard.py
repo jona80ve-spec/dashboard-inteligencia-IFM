@@ -34,19 +34,26 @@ st.markdown("""
     .block-container {padding-top: 0rem;}
     </style>
     """, unsafe_allow_html=True)
+# --- INICIALIZACIÓN DE SESSION STATE (Al inicio del archivo) ---
+if 'empresa_memoria' not in st.session_state:
+    # Definimos la empresa inicial por defecto
+    st.session_state.empresa_memoria = "MERCANTIL C.A."
+def actualizar_empresa():
+    st.session_state.empresa_memoria = st.session_state.selector_empresa
+
 # =================================================================
 # 2. RUTAS Y CARGA DE DATOS (CACHEADO)
 # =================================================================
-df = pd.read_excel('Dashboard IFM historico.xlsx')
+RUTA_EXCEL = r"C:\Users\jonatan.avendano\Desktop\Documentos JA\IFM\Dasboard IFM empresas de seguros\Dashboard IFM historico.xlsx"
 
 @st.cache_data
 def cargar_datos_maestros():
     """Carga las pestañas de Compilado y Ramos desde el Excel."""
     try:
-        archivo = 'Dashboard IFM historico.xlsx'
-        # 2. Cargamos las hojas usando ese nombre
-        df_comp = pd.read_excel(archivo, sheet_name="Compilado", header=5)
-        df_ram = pd.read_excel(archivo, sheet_name="PNC_Ramos", header=0)
+        # Carga pestaña Compilado (General)
+        df_comp = pd.read_excel(RUTA_EXCEL, sheet_name="Compilado", header=5)
+        # Carga pestaña PNC_Ramos (Detallado por ramos)
+        df_ram = pd.read_excel(RUTA_EXCEL, sheet_name="PNC_Ramos", header=0)
         # Limpieza y normalización de meses para orden cronológico
         meses_orden = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
                        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -102,7 +109,8 @@ def crear_indicador_tecnico(valor, titulo, color="#00d4ff"):
 # 4. LÓGICA PRINCIPAL DE LA APLICACIÓN
 # =================================================================
 df_compilado, df_ramos = cargar_datos_maestros()
-
+meses_orden = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+               'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 if df_compilado is not None:
     # --- BARRA LATERAL (Panel de Control) ---
     st.sidebar.title("🎮 Panel de Control")
@@ -116,17 +124,18 @@ if df_compilado is not None:
     mes_actual = st.sidebar.selectbox("Seleccione el Mes", lista_meses)
     
     st.sidebar.markdown("---")
-    
+    st.success("🌟 **¡Nueva sección disponible!** Resumen Empresa Individual en el menú.")
     # Selector de Sección
     menu = st.sidebar.radio(
         "Ir a la sección:",
-        ["📊 Resultados Financieros", "📈 Serie Temporal", "🚗 Detalle por Ramos"],
+        ["📊 Resultados Financieros", "📈 Serie Temporal", "🚗 Detalle por Ramos", "🏢 Resumen por Empresa ✨"],
         index=0
     )
     
     # Filtrado de Dataframes según selección
     df_act = df_compilado[(df_compilado['AÑO'] == ano_actual) & (df_compilado['MES'] == mes_actual)]
     df_ant = df_compilado[(df_compilado['AÑO'] == (ano_actual - 1)) & (df_compilado['MES'] == mes_actual)]
+    total_mercado_pnc = df_act['PrimasNetasCobradas'].sum()
 
 # =================================================================
 # SECCIÓN A: RESULTADOS FINANCIEROS (CON MATRIZ DE 7 INDICADORES)
@@ -566,7 +575,7 @@ if df_compilado is not None:
             
             # Desacumular ramos
             df_mensual_real = df_evol[columnas_ramos].diff().fillna(df_evol[columnas_ramos].iloc[0])
-                       
+                        
             total_pnc_mensual = df_mensual_real[columnas_ramos].sum(axis=1)
             
             # Identificar Top 6 (Excluyendo Fianza)
@@ -764,6 +773,199 @@ if df_compilado is not None:
             st.plotly_chart(fig_linea, use_container_width=True)
         else:
             st.info("💡 Por favor, selecciona uno o más ramos para generar la comparativa temporal.")
+
+# --- 5. PERFIL INDIVIDUAL DE COMPAÑÍA ---
+    elif menu == "🏢 Resumen por Empresa ✨":
+        st.toast("¡Sección Nueva Activada! 🏢", icon="✨")
+        st.title(f"🏢 Resumen {st.session_state.empresa_memoria}: {mes_actual} {ano_actual}")
+        
+        # 2. PREPARAR LISTA ORDENADA
+        df_ranking = df_act.sort_values(by='PrimasNetasCobradas', ascending=False)
+        lista_empresas = df_ranking['NombreCorto'].tolist()
+        
+        # 3. DETERMINAR EL ÍNDICE ACTUAL
+        # Esto busca dónde está la empresa guardada para que el selector aparezca ahí
+        try:
+            idx_persistente = lista_empresas.index(st.session_state.empresa_memoria)
+        except ValueError:
+            idx_persistente = 0
+
+        # 4. EL SELECTOR (IMPORTANTE: Cambiamos la key a 'selector_empresa')
+        # Usamos una key distinta para el widget y actualizamos la 'empresa_memoria' con la función
+        st.selectbox(
+            "Seleccione una Empresa:", 
+            lista_empresas, 
+            index=idx_persistente,
+            key="selector_empresa", 
+            on_change=actualizar_empresa
+        )
+        
+        # 5. SINCRONIZAR LA VARIABLE DE FILTRADO
+        empresa_sel = st.session_state.empresa_memoria
+        
+        # 6. FILTRO DE DATOS
+        # Ahora sí, extraemos la información de la empresa seleccionada
+        df_emp = df_act[df_act['NombreCorto'] == empresa_sel].iloc[0]
+        
+# --- FILA 1: INDICADORES (TARJETAS) USANDO FORMATEO DE MERCADO ---
+        c1, c2, c3, c4, c5 = st.columns(5)
+        
+        # 1. Obtener datos año anterior (Usando df_ant que ya filtraste en Mercado)
+        df_emp_ant_aa = df_ant[df_ant['NombreCorto'] == empresa_sel]
+        
+        # 2. Valores actuales
+        pnc_ind = df_emp['PrimasNetasCobradas']
+        so_act = df_emp['SaldodeOperaciones']
+        rtn_act = df_emp['ResultadoTecnicoNeto']
+        
+        # 3. Valores año anterior
+        pnc_ant_aa = df_emp_ant_aa['PrimasNetasCobradas'].iloc[0] if not df_emp_ant_aa.empty else 0
+        so_ant_aa = df_emp_ant_aa['SaldodeOperaciones'].iloc[0] if not df_emp_ant_aa.empty else 0
+
+        # 4. Variaciones % (Cálculo idéntico al de mercado)
+        var_pnc = ((pnc_ind / pnc_ant_aa) - 1) * 100 if pnc_ant_aa > 0 else 0
+        var_so = ((so_act / so_ant_aa) - 1) * 100 if so_ant_aa != 0 else 0
+
+        # 5. Renderizado con st.metric (Mismo estilo que mercado)
+        with c1:
+            st.metric("Primas Netas Cobradas", f"{formato_ves(pnc_ind)} Bs.", f"{var_pnc:.2f}% vs AA")
+        
+        with c2:
+            # Resultado Técnico: Sin variación, solo el monto
+            # Nota: st.metric pondrá el monto en blanco/gris por defecto
+            st.metric("Resultado Técnico", f"{formato_ves(rtn_act)} Bs.")
+            
+        with c3:
+            st.metric("Saldo de Operaciones", f"{formato_ves(so_act)} Bs.", f"{var_so:.2f}% vs AA")
+
+        with c4:
+            mkt_share = (pnc_ind / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
+            st.metric("Participación Mercado", f"{mkt_share:.2f}%")
+
+        with c5:
+            st.metric("Siniestros Incurridos", f"{formato_ves(df_emp['TotalGenralSI'])} Bs.")
+
+        st.markdown("---")
+
+# --- FILA 2: RATIOS TÉCNICOS Y FINANCIEROS (7 RELOJES OPTIMIZADOS) ---
+        st.write("#### ⚖️ Ratios Técnicos y Financieros Individuales")
+        
+        # 1. Cálculos de Ratios con la empresa seleccionada
+        p_dev_ind = df_emp['Total GeneralPDev']
+        
+        r_com = (df_emp['Comisiones'] / pnc_ind * 100) if pnc_ind > 0 else 0
+        r_ia = (df_emp['GastosdeAdquision'] / pnc_ind * 100) if pnc_ind > 0 else 0
+        r_gad = (df_emp['Gastosdeadministracion'] / pnc_ind * 100) if pnc_ind > 0 else 0
+        r_si = (df_emp['TotalGenralSI'] / p_dev_ind * 100) if p_dev_ind > 0 else 0
+        r_rea = (-(df_emp['ResultadodelReaseguroCedido']) / p_dev_ind * 100) if p_dev_ind > 0 else 0
+        
+        tc_ind_calc = r_com + r_ia + r_gad + r_si + r_rea 
+        icr_ind = (df_emp['InversionesAptas'] / df_emp['ReservasTecnicas']) if df_emp['ReservasTecnicas'] > 0 else 0
+
+        # Función para generar los relojes compactos con títulos visibles
+        def crear_gauge_final(valor, titulo, color="#2196F3", es_porcentaje=True):
+            fig = go.Figure(go.Indicator(
+                mode = "gauge+number",
+                value = valor,
+                # Forzamos 2 decimales en el número central (.2f)
+                number = {'suffix': "%" if es_porcentaje else "", 'valueformat': ".2f", 'font': {'size': 16}},
+                title = {'text': titulo, 'font': {'size': 11}}, 
+                gauge = {
+                    'axis': {'range': [0, 120] if es_porcentaje else [0, 2], 'tickwidth': 1, 'tickfont': {'size': 8}},
+                    'bar': {'color': color},
+                    'steps': [{'range': [0, 100] if es_porcentaje else [0, 1], 'color': "rgba(0,0,0,0.05)"}]
+                }
+            ))
+            # Ajuste de márgenes: t=50 da espacio para que el título no se corte
+            fig.update_layout(
+                height=170, 
+                margin=dict(l=5, r=5, t=50, b=5), 
+                paper_bgcolor="rgba(0,0,0,0)", 
+                plot_bgcolor="rgba(0,0,0,0)"
+            )
+            return fig
+
+        # --- Renderizado de los 7 indicadores en una sola fila ---
+        cols = st.columns(7)
+        
+        # Diccionario de configuración para los 7 gauges
+        config_relojes = [
+            (r_com, "Comisiones %", "#2196F3", True),
+            (r_ia, "G. Adquisición %", "#2196F3", True),
+            (r_gad, "G. Admin %", "#FF9800", True),
+            (r_si, "Siniestralidad %", "#ff4b4b", True),
+            (r_rea, "Costo Reaseg %", "#64B5F6", True),
+            (tc_ind_calc, "Tasa Comb %", "#795548", True),
+            (icr_ind, "ICR (Inv/Res)", "#9C27B0", False)
+        ]
+
+        for i, (val, tit, col, perc) in enumerate(config_relojes):
+            cols[i].plotly_chart(crear_gauge_final(val, tit, col, perc), use_container_width=True)
+
+# --- FILA 3: EVOLUCIÓN MENSUAL DINÁMICA ---
+        st.markdown("---")
+        st.write(f"#### 📈 Análisis Evolutivo Dinámico - {empresa_sel}")
+        
+        # 1. Preparar el DataFrame histórico
+        df_hist = df_compilado[
+            (df_compilado['AÑO'] == ano_actual) & 
+            (df_compilado['NombreCorto'] == empresa_sel)
+        ].copy()
+
+        # 2. Ordenamiento cronológico
+        dict_meses = {mes: i+1 for i, mes in enumerate(meses_orden)}
+        df_hist['MES_NUM'] = df_hist['MES'].map(dict_meses)
+        df_hist = df_hist.sort_values('MES_NUM')
+
+        # 3. Cálculo de variables (Desmensualizadas y Directas)
+        df_hist['PNC_Mensual'] = df_hist['PrimasNetasCobradas'].diff().fillna(df_hist['PrimasNetasCobradas'])
+        df_hist['SI_Mensual'] = df_hist['TotalGenralSI'].diff().fillna(df_hist['TotalGenralSI'])
+        # 'ResultadoTecnicoNeto' y 'SaldodeOperaciones' se usan directo
+
+        # --- NUEVO: SELECTOR DE VARIABLES ---
+        # Definimos un diccionario para que los nombres en el selector sean amigables
+        opciones_vars = {
+            "PNC_Mensual": "Primas Netas (Mensual)",
+            "SI_Mensual": "Siniestros (Mensual)",
+            "ResultadoTecnicoNeto": "Resultado Técnico Neto",
+            "SaldodeOperaciones": "Saldo de Operaciones"
+        }
+        
+        # El multiselect permite al usuario elegir qué ver
+        seleccionadas = st.multiselect(
+            "Seleccione los indicadores a graficar:",
+            options=list(opciones_vars.keys()),
+            default=["PNC_Mensual", "SI_Mensual"], # Variables que aparecen por defecto
+            format_func=lambda x: opciones_vars[x]
+        )
+
+        if seleccionadas and not df_hist.empty:
+            fig_line = px.line(
+                df_hist, 
+                x='MES', 
+                y=seleccionadas,
+                labels={'value': 'Monto (Bs.)', 'variable': 'Indicador'},
+                markers=True,
+                title=f"Evolución de Indicadores Seleccionados - {ano_actual}",
+                color_discrete_map={
+                    "PNC_Mensual": "#2196F3", 
+                    "SI_Mensual": "#FF4B4B", 
+                    "ResultadoTecnicoNeto": "#00C853", 
+                    "SaldodeOperaciones": "#FFD600"
+                }
+            )
+            
+            fig_line.update_layout(
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=20, r=20, t=50, b=20),
+                hovermode="x unified"
+            )
+            
+            st.plotly_chart(fig_line, use_container_width=True)
+        elif not seleccionadas:
+            st.warning("⚠️ Por favor, seleccione al menos un indicador para visualizar la gráfica.")
+        else:
+            st.info(f"No hay datos suficientes para {empresa_sel}.")
 # =================================================================
 # 5. MENSAJE DE PIE DE PÁGINA O ERROR
 # =================================================================
