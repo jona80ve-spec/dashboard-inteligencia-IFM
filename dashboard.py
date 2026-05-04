@@ -126,11 +126,10 @@ if df_compilado is not None:
     mes_actual = st.sidebar.selectbox("Seleccione el Mes", lista_meses)
     
     st.sidebar.markdown("---")
-    st.success("🌟 **¡Nueva sección disponible!** Resumen Empresa Individual en el menú.")
     # Selector de Sección
     menu = st.sidebar.radio(
         "Ir a la sección:",
-        ["📊 Resultados Financieros", "📈 Serie Temporal", "🚗 Detalle por Ramos", "🏢 Resumen por Empresa ✨"],
+        ["📊 Resultados Financieros", "📈 Serie Temporal", "🚗 Detalle por Ramos", "🏢 Resumen por Empresa"],
         index=0
     )
     
@@ -777,8 +776,7 @@ if df_compilado is not None:
             st.info("💡 Por favor, selecciona uno o más ramos para generar la comparativa temporal.")
 
 # --- 5. PERFIL INDIVIDUAL DE COMPAÑÍA ---
-    elif menu == "🏢 Resumen por Empresa ✨":
-        st.toast("¡Sección Nueva Activada! 🏢", icon="✨")
+    elif menu == "🏢 Resumen por Empresa":
         st.title(f"🏢 Resumen {st.session_state.empresa_memoria}: {mes_actual} {ano_actual}")
         
         # 2. PREPARAR LISTA ORDENADA
