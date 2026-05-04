@@ -864,6 +864,11 @@ if df_compilado is not None:
 
         # Función para generar los relojes compactos con títulos visibles
         def crear_gauge_final(valor, titulo, color="#2196F3", es_porcentaje=True):
+            color_final = color
+            if titulo == "Tasa Comb %" and valor > 100:
+                color_final = "#ff4b4b"
+            if titulo == "ICR (Inv/Res)" and valor < 1: # Uso 1 porque tus datos parecen estar en escala 0-100
+                color_final = "#ff4b4b"
             fig = go.Figure(go.Indicator(
                 mode = "gauge+number",
                 value = valor,
@@ -872,7 +877,7 @@ if df_compilado is not None:
                 title = {'text': titulo, 'font': {'size': 11}}, 
                 gauge = {
                     'axis': {'range': [0, 120] if es_porcentaje else [0, 2], 'tickwidth': 1, 'tickfont': {'size': 8}},
-                    'bar': {'color': color},
+                    'bar': {'color': color_final},
                     'steps': [{'range': [0, 100] if es_porcentaje else [0, 1], 'color': "rgba(0,0,0,0.05)"}]
                 }
             ))
