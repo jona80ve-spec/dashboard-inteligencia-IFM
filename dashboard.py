@@ -194,7 +194,7 @@ if df_compilado is not None:
         for col, (val, lab, col_hex, suf) in zip(g_cols, metrics_data):
             with col: 
                 fig_g = crear_indicador_tecnico(val, lab, col_hex)
-                fig_g.update_traces(number={'suffix': suf})
+                fig_g.update_traces(number={'valueformat': '.2f', 'suffix': suf})
                 st.plotly_chart(fig_g, use_container_width=True)
 
         st.markdown("---")
