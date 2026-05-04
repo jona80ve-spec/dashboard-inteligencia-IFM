@@ -182,12 +182,12 @@ if df_compilado is not None:
         color_icr = "#ff4b4b" if icr_mercado_val < 1 else "#00f5d4"
         
         metrics_data = [
-            (r_com_t, "Comisiones", "#4e3b8c", "%"), 
-            (r_gaq_t, "Gtos. Adq.", "#0077b6", "%"),
-            (r_gad_t, "Gtos. Admin", "#00b4d8", "%"), 
-            (r_sin_t, "Siniestralidad", "#5b84b1", "%"),
-            (r_rea_t, "Costo Reaseg.", "#3d4461", "%"), 
-            (ind_tc_t, "Tasa Comb.", color_tc, "%"),
+            (r_com_t, "Comisiones (COM)", "#4e3b8c", "%"), 
+            (r_gaq_t, "Gtos. Adq. (IA)", "#0077b6", "%"),
+            (r_gad_t, "Gtos. Admin (IGA)", "#00b4d8", "%"), 
+            (r_sin_t, "Siniestralidad (SI)", "#5b84b1", "%"),
+            (r_rea_t, "Costo Reaseg. (REA)", "#3d4461", "%"), 
+            (ind_tc_t, "Tasa Comb. (TC)", color_tc, "%"),
             (icr_mercado_val, "ICR", color_icr, "") # ICR sin sufijo %
         ]
         
@@ -973,4 +973,4 @@ else:
     st.warning("⚠️ No se pudieron cargar los datos. Verifique la ruta del archivo Excel y que no esté abierto por otro programa.")
 
 st.sidebar.markdown("---")
-st.sidebar.caption("🏢🛡️Sistema de Inteligencia IFM - Dashboard Corporativo")
+st.sidebar.caption("🏦🛡️Sistema de Inteligencia IFM - Dashboard Corporativo")
