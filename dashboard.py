@@ -1185,4 +1185,7 @@ else:
     st.warning("⚠️ No se pudieron cargar los datos. Verifique la ruta del archivo Excel y que no esté abierto por otro programa.")
 
 st.sidebar.markdown("---")
-st.sidebar.caption("🏦🛡️Sistema de Inteligencia IFM - Dashboard Corporativo")
+st.sidebar.caption("🏦🛡️**Sistema de Inteligencia IFM - Dashboard Corporativo**")
+st.sidebar.caption("© 2026 - Todos los derechos reservados")
+
+st.sidebar.caption("⚠️*Los datos convertidos a dólares (USD) son estrictamente de referencia. No representan necesariamente la contabilidad oficial en divisas de las Empresas.*")
