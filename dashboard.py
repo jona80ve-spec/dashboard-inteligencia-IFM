@@ -1080,86 +1080,103 @@ if df_compilado is not None:
         for i, (val, tit, col, perc) in enumerate(config_relojes):
             cols[i].plotly_chart(crear_gauge_final(val, tit, col, perc), use_container_width=True)
 
-# --- FILA 3: EVOLUCIÓN MENSUAL DINÁMICA ---
+# --- FILA 3: EVOLUCIÓN MENSUAL DINÁMICA (HISTÓRICO MULTIANUAL) ---
         st.markdown("---")
-        st.write(f"#### 📈 Análisis Evolutivo Dinámico - {empresa_sel}")
+        st.write(f"#### 📈 Análisis Evolutivo Dinámico Histórico - {empresa_sel}")
 
-        # 1. Preparar el DataFrame histórico
+        # 1. Preparar el DataFrame histórico (QUITAMOS el filtro de ano_actual)
         df_hist = df_compilado[
-            (df_compilado['AÑO'] == ano_actual) & 
             (df_compilado['NombreCorto'] == empresa_sel)
         ].copy()
 
-        # 2. Normalización de meses
-        df_hist['MES'] = df_hist['MES'].str.strip().str.capitalize()
+        # Aseguramos formato de fecha y orden cronológico real
+        df_hist['Fecha'] = pd.to_datetime(df_hist['Fecha'])
+        df_hist = df_hist.sort_values('Fecha')
+        df_hist['MES_CAP'] = df_hist['MES'].str.strip().str.capitalize()
 
-        # 3. Lógica de Dolarización (Copiando la seguridad de la Fila 1)
+        # 2. Lógica de Dolarización Multianual
         etiqueta_y = "Monto (Bs.)"
 
         if moneda == "USD":
             etiqueta_y = "Monto (USD)"
             
-            # Función de ayuda para obtener tasas mes a mes (evita fallos de merge)
-            def obtener_tasa(mes_nombre, tipo_tasa):
-                reg = df_tas[(df_tas['AÑO'] == ano_actual) & (df_tas['MES'].str.strip().str.capitalize() == mes_nombre)]
+            # Función ajustada para buscar tasa por MES y AÑO específico del registro
+            def obtener_tasa_hist(row, tipo_tasa):
+                mes_n = row['MES_CAP']
+                anio_n = row['AÑO']
+                reg = df_tas[(df_tas['AÑO'] == anio_n) & (df_tas['MES'].str.strip().str.capitalize() == mes_n)]
                 if not reg.empty:
-                    # Buscamos la columna sin importar mayúsculas
                     for col in reg.columns:
                         if tipo_tasa.upper() in col.upper():
-                            return reg[col].values[0]
+                            val = reg[col].values[0]
+                            return val if val > 0 else 1.0
                 return 1.0
 
-            # Creamos las columnas de tasas una por una
-            df_hist['t_prom'] = df_hist['MES'].apply(lambda x: obtener_tasa(x, 'Promedio'))
-            df_hist['t_cier'] = df_hist['MES'].apply(lambda x: obtener_tasa(x, 'Cierre'))
+            # Aplicamos conversión fila por fila considerando su propio año
+            df_hist['t_prom'] = df_hist.apply(lambda r: obtener_tasa_hist(r, 'Promedio'), axis=1)
+            df_hist['t_cier'] = df_hist.apply(lambda r: obtener_tasa_hist(r, 'Cierre'), axis=1)
 
-            # Calculamos variables (Desacumulando PNC y SI igual que en Fila 1)
-            df_hist = df_hist.sort_values('MES', key=lambda x: x.map({m.capitalize(): i for i, m in enumerate(meses_orden)}))
-            
-            df_hist['PNC_Mensual'] = (df_hist['PrimasNetasCobradas'].diff().fillna(df_hist['PrimasNetasCobradas'])) / df_hist['t_prom']
-            df_hist['SI_Mensual'] = (df_hist['TotalGenralSI'].diff().fillna(df_hist['TotalGenralSI'])) / df_hist['t_cier']
-            df_hist['ResultadoTecnicoNeto'] = df_hist['ResultadoTecnicoNeto'] / df_hist['t_cier']
-            df_hist['SaldodeOperaciones'] = df_hist['SaldodeOperaciones'] / df_hist['t_cier']
+            # Desacumulamos PNC y SI por AÑO para evitar saltos extraños entre diciembres y eneros
+            df_hist['PNC_Mensual'] = df_hist.groupby('AÑO')['PrimasNetasCobradas'].diff().fillna(df_hist['PrimasNetasCobradas']) / df_hist['t_prom']
+            df_hist['SI_Mensual'] = df_hist.groupby('AÑO')['TotalGenralSI'].diff().fillna(df_hist['TotalGenralSI']) / df_hist['t_cier']
+            df_hist['ResultadoTecnicoNeto_Val'] = df_hist['ResultadoTecnicoNeto'] / df_hist['t_cier']
+            df_hist['SaldodeOperaciones_Val'] = df_hist['SaldodeOperaciones'] / df_hist['t_cier']
         else:
-            # Lógica en Bolívares
-            df_hist = df_hist.sort_values('MES', key=lambda x: x.map({m.capitalize(): i for i, m in enumerate(meses_orden)}))
-            df_hist['PNC_Mensual'] = df_hist['PrimasNetasCobradas'].diff().fillna(df_hist['PrimasNetasCobradas'])
-            df_hist['SI_Mensual'] = df_hist['TotalGenralSI'].diff().fillna(df_hist['TotalGenralSI'])
+            # Lógica en Bolívares (Desacumulada)
+            df_hist['PNC_Mensual'] = df_hist.groupby('AÑO')['PrimasNetasCobradas'].diff().fillna(df_hist['PrimasNetasCobradas'])
+            df_hist['SI_Mensual'] = df_hist.groupby('AÑO')['TotalGenralSI'].diff().fillna(df_hist['TotalGenralSI'])
+            df_hist['ResultadoTecnicoNeto_Val'] = df_hist['ResultadoTecnicoNeto']
+            df_hist['SaldodeOperaciones_Val'] = df_hist['SaldodeOperaciones']
 
-        # 4. Selector y Gráfico
+        # 3. Mapeo de variables para el selector
         opciones_vars = {
             "PNC_Mensual": "Primas Netas (Mensual)",
             "SI_Mensual": "Siniestros (Mensual)",
-            "ResultadoTecnicoNeto": "Resultado Técnico Neto",
-            "SaldodeOperaciones": "Saldo de Operaciones"
+            "ResultadoTecnicoNeto_Val": "Resultado Técnico Neto",
+            "SaldodeOperaciones_Val": "Saldo de Operaciones"
         }
 
         seleccionadas = st.multiselect(
             "Seleccione los indicadores a graficar:",
             options=list(opciones_vars.keys()),
             default=["PNC_Mensual", "SI_Mensual"],
-            format_func=lambda x: opciones_vars[x]
+            format_func=lambda x: opciones_vars[x],
+            key="ms_empresa_hist"
         )
 
         if seleccionadas and not df_hist.empty:
-            # Aseguramos que las columnas existan antes de graficar
-            cols_finales = [c for c in seleccionadas if c in df_hist.columns]
+            fig_line = go.Figure()
             
-            fig_line = px.line(
-                df_hist, x='MES', y=cols_finales,
-                labels={'value': etiqueta_y, 'variable': 'Indicador'},
-                markers=True,
-                title=f"Evolución {moneda} - {empresa_sel}",
-                color_discrete_map={"PNC_Mensual": "#2196F3", "SI_Mensual": "#FF4B4B"}
+            # Usamos Plotly Graph Objects para mayor control sobre el eje X (Fecha)
+            for var in seleccionadas:
+                fig_line.add_trace(go.Scatter(
+                    x=df_hist['Fecha'], 
+                    y=df_hist[var],
+                    mode='lines+markers',
+                    name=opciones_vars[var],
+                    hovertemplate="<b>%{x|%B %Y}</b><br>Monto: %{y:,.2f}<extra></extra>"
+                ))
+            
+            fig_line.update_layout(
+                template="plotly_dark",
+                title=f"Evolución {moneda} - {empresa_sel} (Histórico Completo)",
+                hovermode="x unified",
+                height=500,
+                xaxis=dict(
+                    title="Línea de Tiempo",
+                    rangeslider=dict(visible=True),
+                    type='date'
+                ),
+                yaxis=dict(title=etiqueta_y, tickformat=","),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             
-            fig_line.update_layout(hovermode="x unified", yaxis=dict(tickformat=","))
             st.plotly_chart(fig_line, use_container_width=True)
 
         elif not seleccionadas:
-            st.warning("⚠️ Por favor, seleccione al menos un indicador para visualizar la gráfica.")
+            st.warning("⚠️ Seleccione al menos un indicador.")
         else:
-            st.info(f"No hay datos suficientes para {empresa_sel}.")
+            st.info(f"No hay datos históricos suficientes para {empresa_sel}.")
 
 # =================================================================
 # 5. MENSAJE DE PIE DE PÁGINA O ERROR
