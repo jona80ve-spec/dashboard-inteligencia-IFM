@@ -56,6 +56,8 @@ def cargar_datos_maestros():
         df_comp = pd.read_excel(RUTA_EXCEL, sheet_name="Compilado", header=5)
         # Carga pestaña PNC_Ramos (Detallado por ramos)
         df_ram = pd.read_excel(RUTA_EXCEL, sheet_name="PNC_Ramos", header=0)
+        df_tas = pd.read_excel(RUTA_EXCEL, sheet_name="TasasBCV", header=0)
+        
         # Limpieza y normalización de meses para orden cronológico
         meses_orden = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
                        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -67,11 +69,11 @@ def cargar_datos_maestros():
         # Limpieza de espacios en nombres de columnas
         df_comp.columns = [str(c).strip() for c in df_comp.columns]
         df_ram.columns = [str(c).strip() for c in df_ram.columns]
-        
-        return df_comp, df_ram
+        df_tas.columns = [str(c).strip() for c in df_tas.columns]
+        return df_comp, df_ram, df_tas
     except Exception as e:
         st.error(f"Error crítico al leer el archivo Excel: {e}")
-        return None, None
+        return None, None, None
 
 # =================================================================
 # 3. FUNCIONES DE VISUALIZACIÓN Y FORMATEO
@@ -110,7 +112,7 @@ def crear_indicador_tecnico(valor, titulo, color="#00d4ff"):
 # =================================================================
 # 4. LÓGICA PRINCIPAL DE LA APLICACIÓN
 # =================================================================
-df_compilado, df_ramos = cargar_datos_maestros()
+df_compilado, df_ramos, df_tas = cargar_datos_maestros()
 meses_orden = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
                'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 if df_compilado is not None:
@@ -120,12 +122,16 @@ if df_compilado is not None:
     
     # Selectores de tiempo
     lista_años = sorted(df_compilado['AÑO'].unique(), reverse=True)
-    ano_actual = st.sidebar.selectbox("Seleccione el Año", lista_años)
+    ano_actual = st.sidebar.selectbox("Seleccione el Año", lista_años, index=0)
     
-    lista_meses = df_compilado[df_compilado['AÑO'] == ano_actual]['MES'].unique()
-    mes_actual = st.sidebar.selectbox("Seleccione el Mes", lista_meses)
-    
+    meses_disponibles = df_compilado[df_compilado['AÑO'] == ano_actual]['MES'].unique()
+    lista_meses = [m for m in meses_orden if m in meses_disponibles]
+    ultimo_mes_idx = len(lista_meses) - 1 if len(lista_meses) > 0 else 0
+    mes_actual = st.sidebar.selectbox("Seleccione el Mes", lista_meses, index=ultimo_mes_idx)
+    moneda = st.sidebar.radio("Seleccione Tipo de Moneda", ["VES", "USD"])
+
     st.sidebar.markdown("---")
+    
     # Selector de Sección
     menu = st.sidebar.radio(
         "Ir a la sección:",
@@ -144,29 +150,91 @@ if df_compilado is not None:
     if menu == "📊 Resultados Financieros":
         st.title(f"📊 Análisis de Mercado: {mes_actual} {ano_actual}")
         
-        # --- 1. CÁLCULOS DE MERCADO ---
-        pnc_act = df_act['PrimasNetasCobradas'].sum()
-        rtn_act = df_act['ResultadoTecnicoNeto'].sum()
-        so_act = df_act['SaldodeOperaciones'].sum()
-        pnc_ant = df_ant['PrimasNetasCobradas'].sum()
-        so_ant = df_ant['SaldodeOperaciones'].sum()
-        
-        var_pnc = ((pnc_act / pnc_ant) - 1) * 100 if pnc_ant > 0 else 0
-        var_so = ((so_act / so_ant) - 1) * 100 if so_ant != 0 else 0
+        simbolo = "$" if moneda == "USD" else "Bs."
 
-        # --- 2. CABECERA DE KPIs ---
-        k1, k2, k3 = st.columns(3)
-        with k1: st.metric("Total Primas (PNC)", f"{formato_ves(pnc_act)} Bs.", f"{var_pnc:.2f}% vs AA")
-        with k2: st.metric("Saldo de Operaciones", f"{formato_ves(so_act)} Bs.", f"{var_so:.2f}% vs AA")
-        with k3: st.metric("Resultado Técnico Neto", f"{formato_ves(rtn_act)} Bs.")
+        # --- 1. VALORES BASE EN BS (Para Gauges y Fallback) ---
+        pnc_act_bs = df_act['PrimasNetasCobradas'].sum()
+        so_act_bs = df_act['SaldodeOperaciones'].sum()
+        rtn_act_bs = df_act['ResultadoTecnicoNeto'].sum()
+        si_act_bs = df_act['TotalGenralSI'].sum()
+        
+        # Inicializamos variables de visualización por defecto (en Bs.)
+        pnc_vis = pnc_act_bs
+        pnc_comp_aa = df_ant['PrimasNetasCobradas'].sum() if not df_ant.empty else 0
+        so_vis = so_act_bs
+        so_comp_aa = df_ant['SaldodeOperaciones'].sum() if not df_ant.empty else 0
+        rtn_vis = rtn_act_bs
+        si_vis = si_act_bs
+
+        # --- 2. LÓGICA DE DOLARIZACIÓN (ESPEJO DE LA VISTA INDIVIDUAL) ---
+        if moneda == "USD":
+            try:
+                # Función segura para obtener tasas
+                def get_tasa_segura(ano, mes_nombre, tipo):
+                    m_clean = str(mes_nombre).strip().capitalize()
+                    reg = df_tas[(df_tas['AÑO'] == ano) & (df_tas['MES'].str.strip().str.capitalize() == m_clean)]
+                    col = 'Tasa_Cierre' if tipo == 'cierre' else 'TasaPromedio'
+                    # Buscamos la columna de forma flexible por si acaso
+                    col_real = next((c for c in reg.columns if col.upper() in c.upper()), None)
+                    return reg[col_real].values[0] if col_real and not reg.empty else 1.0
+
+                # --- DESACUMULACIÓN MENSUAL DEL MERCADO ---
+                idx_actual = meses_orden.index(mes_actual.capitalize())
+                meses_a_recorrer = meses_orden[:idx_actual + 1]
+                
+                pnc_usd_mercado = 0.0
+                pnc_usd_mercado_aa = 0.0
+                acum_bs_prev = 0.0
+                acum_bs_prev_aa = 0.0
+
+                for m in meses_a_recorrer:
+                    # Mercado Año Actual
+                    df_m = df_compilado[(df_compilado['AÑO'] == ano_actual) & (df_compilado['MES'].str.capitalize() == m.capitalize())]
+                    bs_m = df_m['PrimasNetasCobradas'].sum()
+                    t_p = get_tasa_segura(ano_actual, m, 'promedio')
+                    pnc_usd_mercado += ((bs_m - acum_bs_prev) / t_p)
+                    acum_bs_prev = bs_m
+
+                    # Mercado Año Anterior
+                    df_m_aa = df_compilado[(df_compilado['AÑO'] == ano_actual - 1) & (df_compilado['MES'].str.capitalize() == m.capitalize())]
+                    bs_m_aa = df_m_aa['PrimasNetasCobradas'].sum()
+                    t_p_aa = get_tasa_segura(ano_actual - 1, m, 'promedio')
+                    pnc_usd_mercado_aa += ((bs_m_aa - acum_bs_prev_aa) / t_p_aa)
+                    acum_bs_prev_aa = bs_m_aa
+
+                # Tasas de Cierre para Saldos y Resultados
+                t_cierre_act = get_tasa_segura(ano_actual, mes_actual, 'cierre')
+                t_cierre_aa = get_tasa_segura(ano_actual - 1, mes_actual, 'cierre')
+
+                # Asignación final para los Metrics
+                pnc_vis = pnc_usd_mercado
+                pnc_comp_aa = pnc_usd_mercado_aa
+                so_vis = so_act_bs / t_cierre_act
+                so_comp_aa = so_comp_aa / t_cierre_aa
+                rtn_vis = rtn_act_bs / t_cierre_act
+                si_vis = si_act_bs / t_cierre_act
+
+            except Exception as e:
+                st.sidebar.error(f"Error en conversión USD Mercado: {e}")
+
+        # --- 3. CÁLCULO DE VARIACIONES ---
+        var_pnc = ((pnc_vis / pnc_comp_aa) - 1) * 100 if pnc_comp_aa > 0 else 0
+        var_so = ((so_vis / so_comp_aa) - 1) * 100 if so_comp_aa != 0 else 0
+
+        # --- 4. RENDERIZADO DE KPIs ---
+        c1, c2, c3, c4 = st.columns(4)
+        with c1: st.metric("Total Primas (PNC)", f"{formato_ves(pnc_vis)} {simbolo}", f"{var_pnc:.2f}% vs AA")
+        with c2: st.metric("Saldo de Operaciones", f"{formato_ves(so_vis)} {simbolo}", f"{var_so:.2f}% vs AA")
+        with c3: st.metric("Resultado Técnico Neto", f"{formato_ves(rtn_vis)} {simbolo}")
+        with c4: st.metric("Siniestros Incurridos", f"{formato_ves(si_vis)} {simbolo}")
 
         st.markdown("---")
 
         # --- 3. GAUGES DE MERCADO ---
         p_dev_t = df_act['Total GeneralPDev'].sum() if 'Total GeneralPDev' in df_act.columns else 0
-        r_com_t = (df_act['Comisiones'].sum() / pnc_act * 100) if pnc_act > 0 else 0
-        r_gaq_t = (df_act['GastosdeAdquision'].sum() / pnc_act * 100) if pnc_act > 0 else 0
-        r_gad_t = (df_act['Gastosdeadministracion'].sum() / pnc_act * 100) if pnc_act > 0 else 0
+        r_com_t = (df_act['Comisiones'].sum() / pnc_act_bs * 100) if pnc_act_bs > 0 else 0
+        r_gaq_t = (df_act['GastosdeAdquision'].sum() / pnc_act_bs * 100) if pnc_act_bs > 0 else 0
+        r_gad_t = (df_act['Gastosdeadministracion'].sum() / pnc_act_bs * 100) if pnc_act_bs > 0 else 0
         r_sin_t = (df_act['TotalGenralSI'].sum() / p_dev_t * 100) if p_dev_t > 0 else 0
         r_rea_t = (-(df_act['ResultadodelReaseguroCedido'].sum()) / p_dev_t * 100) if p_dev_t > 0 else 0
         ind_tc_t = r_com_t + r_gaq_t + r_gad_t + r_sin_t + r_rea_t
@@ -182,42 +250,83 @@ if df_compilado is not None:
         color_icr = "#ff4b4b" if icr_mercado_val < 1 else "#00f5d4"
         
         metrics_data = [
-            (r_com_t, "Comisiones (COM)", "#4e3b8c", "%"), 
-            (r_gaq_t, "Gtos. Adq. (IA)", "#0077b6", "%"),
-            (r_gad_t, "Gtos. Admin (IGA)", "#00b4d8", "%"), 
-            (r_sin_t, "Siniestralidad (SI)", "#5b84b1", "%"),
-            (r_rea_t, "Costo Reaseg. (REA)", "#3d4461", "%"), 
-            (ind_tc_t, "Tasa Comb. (TC)", color_tc, "%"),
+            (r_com_t, "Comisiones", "#4e3b8c", "%"), 
+            (r_gaq_t, "Gtos. Adq.", "#0077b6", "%"),
+            (r_gad_t, "Gtos. Admin", "#00b4d8", "%"), 
+            (r_sin_t, "Siniestralidad", "#5b84b1", "%"),
+            (r_rea_t, "Costo Reaseg.", "#3d4461", "%"), 
+            (ind_tc_t, "Tasa Comb.", color_tc, "%"),
             (icr_mercado_val, "ICR", color_icr, "") # ICR sin sufijo %
         ]
         
         for col, (val, lab, col_hex, suf) in zip(g_cols, metrics_data):
             with col: 
                 fig_g = crear_indicador_tecnico(val, lab, col_hex)
-                fig_g.update_traces(number={'valueformat': '.2f', 'suffix': suf})
+                fig_g.update_traces(number={'suffix': suf})
                 st.plotly_chart(fig_g, use_container_width=True)
 
         st.markdown("---")
 
-# --- 4. MONITOR POR INSTITUCIÓN ---
+# --- 4. MONITOR POR INSTITUCIÓN (DESMENSUALIZADO Y DINÁMICO) ---
         st.subheader("⚖️ Monitor de Gestión Técnica")
         modo_vista = st.radio("Filtro visual:", ["Top 10 por PNC", "Mercado Completo"], horizontal=True)
+        
+        simbolo = "$" if moneda == "USD" else "Bs."
 
-        # Preparación de Ranking
+        # 1. Preparación de Ranking (Copia de seguridad)
         df_ranking = df_act.copy()
         
-        # 1. Cálculo de Cuota de Mercado Global
-        total_mercado_pnc = df_ranking['PrimasNetasCobradas'].sum()
-        df_ranking['Mkt (%)'] = (df_ranking['PrimasNetasCobradas'] / total_mercado_pnc * 100).fillna(0)
+        # --- LÓGICA DE DESMENSUALIZACIÓN PNC (Espejo de Fila 1) ---
+        if moneda == "USD":
+            try:
+                idx_actual = meses_orden.index(mes_actual.capitalize())
+                meses_a_recorrer = meses_orden[:idx_actual + 1]
+                pnc_usd_final = {}
 
-        # 2. Ratios Técnicos (Cálculos base)
-        df_ranking['Com (%)'] = (df_ranking['Comisiones'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
-        df_ranking['IA (%)'] = (df_ranking['GastosdeAdquision'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
-        df_ranking['IGA (%)'] = (df_ranking['Gastosdeadministracion'] / df_ranking['PrimasNetasCobradas'] * 100).fillna(0)
-        df_ranking['SI (%)'] = (df_ranking['TotalGenralSI'] / df_ranking['Total GeneralPDev'] * 100).fillna(0)
-        df_ranking['REA (%)'] = (-(df_ranking['ResultadodelReaseguroCedido']) / df_ranking['Total GeneralPDev'] * 100).fillna(0)
+                # Procesamos cada empresa del mercado
+                for empresa in df_ranking['NombreCorto'].unique():
+                    pnc_acum_usd = 0.0
+                    pnc_bs_previo = 0.0
+                    
+                    for m in meses_a_recorrer:
+                        # Buscamos dato histórico
+                        f_h = df_compilado[
+                            (df_compilado['AÑO'] == ano_actual) & 
+                            (df_compilado['MES'].str.strip().str.capitalize() == m.capitalize()) & 
+                            (df_compilado['NombreCorto'] == empresa)
+                        ]
+                        
+                        if not f_h.empty:
+                            bs_m = f_h['PrimasNetasCobradas'].values[0]
+                            # Obtener tasa promedio segura
+                            reg_t = df_tas[(df_tas['AÑO'] == ano_actual) & (df_tas['MES'].str.strip().str.capitalize() == m.capitalize())]
+                            # Buscamos columna que contenga 'PROMEDIO'
+                            col_prom = next((c for c in reg_t.columns if 'PROMEDIO' in c.upper()), None)
+                            t_p = reg_t[col_prom].values[0] if col_prom and not reg_t.empty else 1.0
+                            
+                            # Desmensualizar: (Acumulado Mes Actual - Acumulado Mes Anterior) / Tasa Promedio
+                            pnc_acum_usd += (bs_m - pnc_bs_previo) / t_p
+                            pnc_bs_previo = bs_m
+                    
+                    pnc_usd_final[empresa] = pnc_acum_usd
+
+                # Inyectamos los valores USD en el ranking
+                df_ranking['PrimasNetasCobradas'] = df_ranking['NombreCorto'].map(pnc_usd_final)
+            except Exception as e:
+                st.error(f"Error en desmensualización: {e}")
+
+        # 2. Cálculos de Participación y Ratios Técnicos
+        total_mkt_pnc = df_ranking['PrimasNetasCobradas'].sum()
+        df_ranking['Mkt (%)'] = (df_ranking['PrimasNetasCobradas'] / total_mkt_pnc * 100).fillna(0)
+
+        # Los ratios se calculan sobre df_act (Bs originales) para evitar errores de redondeo cambiario
+        df_ranking['Com (%)'] = (df_act['Comisiones'] / df_act['PrimasNetasCobradas'] * 100).fillna(0)
+        df_ranking['IA (%)'] = (df_act['GastosdeAdquision'] / df_act['PrimasNetasCobradas'] * 100).fillna(0)
+        df_ranking['IGA (%)'] = (df_act['Gastosdeadministracion'] / df_act['PrimasNetasCobradas'] * 100).fillna(0)
+        df_ranking['SI (%)'] = (df_act['TotalGenralSI'] / df_act['Total GeneralPDev'] * 100).fillna(0)
+        df_ranking['REA (%)'] = (-(df_act['ResultadodelReaseguroCedido']) / df_act['Total GeneralPDev'] * 100).fillna(0)
         df_ranking['TC (%)'] = df_ranking['Com (%)'] + df_ranking['IA (%)'] + df_ranking['IGA (%)'] + df_ranking['SI (%)'] + df_ranking['REA (%)']
-        df_ranking['ICR_IND'] = (df_ranking['InversionesAptas'] / df_ranking['ReservasTecnicas']).fillna(0)
+        df_ranking['ICR_IND'] = (df_act['InversionesAptas'] / df_act['ReservasTecnicas']).fillna(0)
 
         cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
@@ -225,17 +334,14 @@ if df_compilado is not None:
         # --- FUNCIÓN DE ESTILO ---
         def style_matrix_clean(df):
             def format_val(val, fmt="{:.2f}%"):
-                if val is None or pd.isna(val) or val == "":
-                    return ""
-                if isinstance(val, (int, float)):
-                    return fmt.format(val)
-                return str(val)
+                if val is None or pd.isna(val) or val == "": return ""
+                return fmt.format(val) if isinstance(val, (int, float)) else str(val)
 
             return df.style\
                 .map(lambda x: 'color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x > 100 else '', subset=['TC (%)'])\
                 .map(lambda x: 'background-color: rgba(255, 75, 75, 0.15); color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x < 1 else '', subset=['ICR_IND'])\
                 .format({
-                    'PrimasNetasCobradas': lambda x: formato_ves(x) if pd.notnull(x) else "",
+                    'PrimasNetasCobradas': lambda x: f"{formato_ves(x)} {simbolo}",
                     'Mkt (%)': lambda x: format_val(x),
                     'ICR_IND': lambda x: format_val(x, "{:.2f}"),
                     'TC (%)': lambda x: format_val(x), 
@@ -251,15 +357,13 @@ if df_compilado is not None:
         # --- FUNCIÓN DE RENDERIZADO ACTUALIZADA ---
         def render_bloque_filtrado(df_sub, titulo, inicio_ranking, altura=500):
             df_plot = df_sub[df_sub['PrimasNetasCobradas'] > 0].copy()
-            
-            # 1. Preparación de Datos del Sub-Total (3 columnas clave)
             suma_pnc = df_sub['PrimasNetasCobradas'].sum()
-            mkt_pct = (suma_pnc / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
+            mkt_pct_bloque = (suma_pnc / total_mkt_pnc * 100) if total_mkt_pnc > 0 else 0
             
             df_resumen = pd.DataFrame({
                 ' ': [f'SUB-TOTAL {titulo.upper()}'],
-                'PrimasNetasCobradas': [formato_ves(suma_pnc)],
-                'Mkt (%)': [f"{mkt_pct:.2f}%"]
+                'PrimasNetasCobradas': [f"{formato_ves(suma_pnc)} {simbolo}"],
+                'Mkt (%)': [f"{mkt_pct_bloque:.2f}%"]
             })
             df_resumen.index = [""] 
 
@@ -269,36 +373,19 @@ if df_compilado is not None:
                 fig = px.bar(df_plot, x='PrimasNetasCobradas', y='NombreCorto', orientation='h', 
                              color='PrimasNetasCobradas', color_continuous_scale=paleta_azul_pro, 
                              custom_data=['Mkt (%)'])
-                fig.update_traces(hovertemplate="<b>%{y}</b><br>Primas: Bs. %{x:,.2f}<br>Participación: %{customdata[0]:.2f}%<extra></extra>")
+                fig.update_traces(hovertemplate=f"<b>%{{y}}</b><br>Primas: {simbolo} %{{x:,.2f}}<br>Participación: %{{customdata[0]:.2f}}%<extra></extra>")
                 fig.update_layout(yaxis={'categoryorder':'total ascending'}, height=altura, showlegend=False, 
                                   coloraxis_showscale=False, margin=dict(t=20, b=20))
                 st.plotly_chart(fig, use_container_width=True)
             
             with c_t:
                 st.write(f"**Matriz Técnica ({titulo})**")
-                
-                # Tabla Principal (Empresas)
                 df_v = df_sub[cols_table].copy()
                 df_v.index = range(inicio_ranking, inicio_ranking + len(df_v))
                 st.dataframe(style_matrix_clean(df_v), use_container_width=True, height=altura - 95)
-                
-                # CSS para el Subtotal Azul (Solo contenido, no títulos)
-                st.markdown("""
-                    <style>
-                        div[data-testid="stTable"] tbody td {
-                            color: #64B5F6 !important;
-                            font-weight: bold !important;
-                        }
-                        div[data-testid="stTable"] thead th {
-                            color: inherit !important;
-                        }
-                    </style>
-                """, unsafe_allow_html=True)
-                
-                # Tabla de Subtotal Minimalista
                 st.table(df_resumen)
 
-        # --- LLAMADAS ---
+        # --- EJECUCIÓN DE BLOQUES ---
         render_bloque_filtrado(df_ranking.head(10), "Top 10", inicio_ranking=1)
 
         if modo_vista == "Mercado Completo":
@@ -310,140 +397,148 @@ if df_compilado is not None:
                 render_bloque_filtrado(df_ranking.iloc[20:], "Resto del Mercado", inicio_ranking=21, altura=600)
 
 # ======================================================================
-# SECCIÓN: SERIE TEMPORAL (HISTÓRICO MENSUAL DINÁMICO Y COMPARATIVO)
+# SECCIÓN: SERIE TEMPORAL (HISTÓRICO MENSUAL DOLARIZADO)
 # ======================================================================
     elif menu == "📈 Serie Temporal":
-        st.title("📈 Evolución Histórica del Mercado (Valores Mensuales)")
+        st.title("📈 Evolución Histórica del Mercado (Dolarización Dinámica)")
         
+        simbolo = "$" if moneda == "USD" else "Bs."
+
         # 1. Preparación de datos base
         df_h = df_compilado.copy()
         df_h['Fecha'] = pd.to_datetime(df_h['Fecha'])
         df_h = df_h.sort_values(['AÑO', 'Fecha'])
         
-        # 2. Agrupación Única: Incluimos TODAS las columnas necesarias para los cálculos posteriores
+        # 2. Agrupación por Fecha para el Mercado Total
         cols_necesarias = [
             'PrimasNetasCobradas', 'Total GeneralPDev', 'TotalGenralSI', 
             'Comisiones', 'GastosdeAdquision', 'Gastosdeadministracion', 
             'ResultadodelReaseguroCedido', 'InversionesAptas', 'ReservasTecnicas',
             'ResultadoTecnicoNeto', 'SaldodeOperaciones'
         ]
-        # Filtramos solo las que existen en el Excel para evitar errores en .agg
         dict_agg = {c: 'sum' for c in cols_necesarias if c in df_h.columns}
         df_timeline = df_h.groupby(['AÑO', 'Fecha'], as_index=False).agg(dict_agg)
 
-        # 3. Lógica de Cálculos (Corrección de KeyErrors)
-        # A. MONTOS
-        # Usamos nombres consistentes para evitar el KeyError: 'PNC Mensual'
-        df_timeline['PNC Mensual Real'] = df_timeline.groupby('AÑO')['PrimasNetasCobradas'].diff().fillna(df_timeline['PrimasNetasCobradas'])
-        df_timeline['SI Monto'] = df_timeline['TotalGenralSI']
-        df_timeline['Resultado Técnico Neto'] = df_timeline['ResultadoTecnicoNeto']
-        df_timeline['Saldo Operaciones'] = df_timeline['SaldodeOperaciones']
+        # 3. LÓGICA DE CONVERSIÓN Y DESACUMULACIÓN
+        if moneda == "USD":
+            try:
+                # Diccionario para asegurar match con nombres de meses en df_tas
+                meses_map = {
+                    1: 'Enero', 2: 'Febrero', 3: 'Marzo', 4: 'Abril', 5: 'Mayo', 6: 'Junio',
+                    7: 'Julio', 8: 'Agosto', 9: 'Septiembre', 10: 'Octubre', 11: 'Noviembre', 12: 'Diciembre'
+                }
 
-        # B. RATIOS (Calculados sobre primas acumuladas originales)
-        pnc_ref = df_timeline['PrimasNetasCobradas']
-        pdev_ref = df_timeline['Total GeneralPDev']
+                def obtener_tasa_h(row, tipo='promedio'):
+                    m_nombre = meses_map[row['Fecha'].month]
+                    reg_t = df_tas[(df_tas['AÑO'] == row['AÑO']) & (df_tas['MES'].str.strip().str.capitalize() == m_nombre.capitalize())]
+                    
+                    if reg_t.empty:
+                        return 1.0
+                    
+                    # Búsqueda flexible para 'TasaPromedio' o 'Tasa_Cierre'
+                    termino = 'PROMEDIO' if tipo == 'promedio' else 'CIERRE'
+                    col_real = next((c for c in reg_t.columns if termino in c.upper()), None)
+                    
+                    if col_real:
+                        val = reg_t[col_real].values[0]
+                        return val if val > 0 else 1.0
+                    return 1.0
 
-        # Definimos los componentes antes de sumarlos para evitar KeyError: 'SI (%)'
-        df_timeline['SI (%)'] = (df_timeline['TotalGenralSI'] / pdev_ref * 100).fillna(0)
-        df_timeline['Com (%)'] = (df_timeline['Comisiones'] / pnc_ref * 100).fillna(0)
-        df_timeline['IA (%)'] = (df_timeline['GastosdeAdquision'] / pnc_ref * 100).fillna(0)
-        df_timeline['IGA (%)'] = (df_timeline['Gastosdeadministracion'] / pnc_ref * 100).fillna(0)
-        df_timeline['REA (%)'] = (-(df_timeline['ResultadodelReaseguroCedido']) / pdev_ref * 100).fillna(0)
-        
-        # Índice Combinado (TC %)
-        df_timeline['Índice Combinado (%)'] = (
-            df_timeline['SI (%)'] + df_timeline['Com (%)'] + 
-            df_timeline['IA (%)'] + df_timeline['IGA (%)'] + df_timeline['REA (%)']
-        )
-        
-        # ICR: Manejo seguro para evitar KeyError: 'InversionesAptas'
-        if 'InversionesAptas' in df_timeline.columns and 'ReservasTecnicas' in df_timeline.columns:
-            df_timeline['ICR (Veces)'] = (df_timeline['InversionesAptas'] / df_timeline['ReservasTecnicas']).fillna(0)
+                # --- A. PNC MENSUAL (Flujo: Usando TasaPromedio) ---
+                df_timeline['PNC_Mensual_Bs'] = df_timeline.groupby('AÑO')['PrimasNetasCobradas'].diff().fillna(df_timeline['PrimasNetasCobradas'])
+                df_timeline['Tasa_P'] = df_timeline.apply(lambda r: obtener_tasa_h(r, 'promedio'), axis=1)
+                df_timeline['PNC Mensual Real'] = df_timeline['PNC_Mensual_Bs'] / df_timeline['Tasa_P']
 
-# -------------------------------------------------------------
+                # --- B. MONTOS DE SALDO (Stock: Usando Tasa_Cierre) ---
+                df_timeline['Tasa_C'] = df_timeline.apply(lambda r: obtener_tasa_h(r, 'cierre'), axis=1)
+                df_timeline['SI Monto'] = df_timeline['TotalGenralSI'] / df_timeline['Tasa_C']
+                df_timeline['Resultado Técnico Neto'] = df_timeline['ResultadoTecnicoNeto'] / df_timeline['Tasa_C']
+                df_timeline['Saldo Operaciones'] = df_timeline['SaldodeOperaciones'] / df_timeline['Tasa_C']
+                
+            except Exception as e:
+                st.error(f"Error en conversión cambiaria: {e}")
+        else:
+            # Lógica en Bolívares
+            df_timeline['PNC Mensual Real'] = df_timeline.groupby('AÑO')['PrimasNetasCobradas'].diff().fillna(df_timeline['PrimasNetasCobradas'])
+            df_timeline['SI Monto'] = df_timeline['TotalGenralSI']
+            df_timeline['Resultado Técnico Neto'] = df_timeline['ResultadoTecnicoNeto']
+            df_timeline['Saldo Operaciones'] = df_timeline['SaldodeOperaciones']
+
+        # 4. RATIOS TÉCNICOS (Base Bs. original)
+        df_timeline['SI (%)'] = (df_timeline['TotalGenralSI'] / df_timeline['Total GeneralPDev'] * 100).fillna(0)
+        df_timeline['Com (%)'] = (df_timeline['Comisiones'] / df_timeline['PrimasNetasCobradas'] * 100).fillna(0)
+        df_timeline['IA (%)'] = (df_timeline['GastosdeAdquision'] / df_timeline['PrimasNetasCobradas'] * 100).fillna(0)
+        df_timeline['IGA (%)'] = (df_timeline['Gastosdeadministracion'] / df_timeline['PrimasNetasCobradas'] * 100).fillna(0)
+        df_timeline['REA (%)'] = (-(df_timeline['ResultadodelReaseguroCedido']) / df_timeline['Total GeneralPDev'] * 100).fillna(0)
+        df_timeline['Índice Combinado (%)'] = df_timeline['SI (%)'] + df_timeline['Com (%)'] + df_timeline['IA (%)'] + df_timeline['IGA (%)'] + df_timeline['REA (%)']
+
+        # -------------------------------------------------------------
         # --- BLOQUE 1: COMPARATIVO INTERANUAL ---
-# -------------------------------------------------------------
+        # -------------------------------------------------------------
         ano_previo = ano_actual - 1
-        st.subheader(f"📊 Comparativo de Crecimiento: {ano_actual} vs {ano_previo}")
+        st.subheader(f"📊 Crecimiento Real: {ano_actual} vs {ano_previo} ({simbolo})")
 
-        # Extraemos datos usando el nombre de columna correcto
-        pnc_actual = df_timeline[df_timeline['AÑO'] == ano_actual][['Fecha', 'PNC Mensual Real']].copy()
-        pnc_anterior = df_timeline[df_timeline['AÑO'] == ano_previo][['Fecha', 'PNC Mensual Real']].copy()
+        df_act_line = df_timeline[df_timeline['AÑO'] == ano_actual].copy()
+        df_ant_line = df_timeline[df_timeline['AÑO'] == ano_previo].copy()
 
-        if not pnc_actual.empty:
+        if not df_act_line.empty:
             nombres_meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
-                            'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-            pnc_actual['Mes_Nombre'] = pnc_actual['Fecha'].dt.month.apply(lambda x: nombres_meses[x-1])
-            pnc_anterior['Mes_Nombre'] = pnc_anterior['Fecha'].dt.month.apply(lambda x: nombres_meses[x-1])
+                             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+            
+            df_act_line['Mes_Nombre'] = df_act_line['Fecha'].dt.month.apply(lambda x: nombres_meses[x-1])
+            df_ant_line['Mes_Nombre'] = df_ant_line['Fecha'].dt.month.apply(lambda x: nombres_meses[x-1])
 
             col_act, col_ant = str(ano_actual), str(ano_previo)
-            df_comp = pnc_actual[['Mes_Nombre', 'PNC Mensual Real']].rename(columns={'PNC Mensual Real': col_act}).merge(
-                pnc_anterior[['Mes_Nombre', 'PNC Mensual Real']].rename(columns={'PNC Mensual Real': col_ant}),
+            df_comp = df_act_line[['Mes_Nombre', 'PNC Mensual Real']].rename(columns={'PNC Mensual Real': col_act}).merge(
+                df_ant_line[['Mes_Nombre', 'PNC Mensual Real']].rename(columns={'PNC Mensual Real': col_ant}),
                 on='Mes_Nombre', how='left'
             ).fillna(0)
 
             df_comp['Mes_Nombre'] = pd.Categorical(df_comp['Mes_Nombre'], categories=nombres_meses, ordered=True)
             df_comp = df_comp.sort_values('Mes_Nombre')
             df_comp['Var%'] = ((df_comp[col_act] / df_comp[col_ant]) - 1) * 100
-            
-            # --- CÁLCULO DE FILA TOTAL ---
-            total_act = df_comp[col_act].sum()
-            total_ant = df_comp[col_ant].sum()
-            total_var = ((total_act / total_ant) - 1) * 100 if total_ant != 0 else 0
 
-            df_total = pd.DataFrame({
-                'Mes_Nombre': ['TOTAL'],
-                col_act: [total_act],
-                col_ant: [total_ant],
-                'Var%': [total_var]
-            })
-            
-            # Unimos para la tabla
+            total_act, total_ant = df_comp[col_act].sum(), df_comp[col_ant].sum()
+            total_var = ((total_act / total_ant) - 1) * 100 if total_ant != 0 else 0
+            df_total = pd.DataFrame({'Mes_Nombre': ['TOTAL'], col_act: [total_act], col_ant: [total_ant], 'Var%': [total_var]})
             df_comp_final = pd.concat([df_comp, df_total], ignore_index=True)
 
-            # Visualización de tabla y gráfico azul
             col_t, col_g = st.columns([1, 1.6])
             with col_t:
-                st.write("**📝 Detalle de Primaje Real**")
-                def formato_latino(valor):
-                    return "{:,.2f}".format(valor).replace(",", "X").replace(".", ",").replace("X", ".")
-                
-                # Mostramos df_comp_final con estilo resaltado para la última fila
+                st.write(f"**📝 Primaje Mensual ({simbolo})**")
                 st.dataframe(
                     df_comp_final.style.format({
-                        col_act: formato_latino, 
-                        col_ant: formato_latino, 
-                        'Var%': lambda x: f"{x:,.2f}%".replace(".", ",")
-                    }).apply(lambda x: ['font-weight: bold; background-color: #1A5F7A' if x.name == df_comp_final.index[-1] else '' for i in x], axis=1), 
-                    use_container_width=True, 
-                    height=500, 
-                    hide_index=True
+                        col_act: lambda x: f"{formato_ves(x)}", 
+                        col_ant: lambda x: f"{formato_ves(x)}", 
+                        'Var%': "{:,.2f}%"
+                    }).apply(lambda x: ['font-weight: bold; background-color: #1A5F7A' if x.name == df_comp_final.index[-1] else '' for i in x], axis=1),
+                    use_container_width=True, height=500, hide_index=True
                 )
 
             with col_g:
-                # El gráfico usa df_comp (SIN el total) para no distorsionar la escala
                 fig_comp = go.Figure()
-                fig_comp.add_trace(go.Bar(x=df_comp['Mes_Nombre'], y=df_comp[col_ant], name=f'PNC {ano_previo}', marker_color='#91C8E4'))
-                fig_comp.add_trace(go.Bar(x=df_comp['Mes_Nombre'], y=df_comp[col_act], name=f'PNC {ano_actual}', marker_color='#1A5F7A'))
+                fig_comp.add_trace(go.Bar(x=df_comp['Mes_Nombre'], y=df_comp[col_ant], name=f'{ano_previo}', marker_color='#91C8E4'))
+                fig_comp.add_trace(go.Bar(x=df_comp['Mes_Nombre'], y=df_comp[col_act], name=f'{ano_actual}', marker_color='#1A5F7A'))
                 fig_comp.add_trace(go.Scatter(x=df_comp['Mes_Nombre'], y=df_comp['Var%'], name='Var %', yaxis='y2', line=dict(color='#00D4FF', width=3)))
-                fig_comp.update_layout(template="plotly_dark", height=400, yaxis2=dict(overlaying='y', side='right', showgrid=False), legend=dict(orientation="h", y=-0.2))
+                fig_comp.update_layout(template="plotly_dark", height=400, yaxis2=dict(overlaying='y', side='right', showgrid=False), 
+                                      legend=dict(orientation="h", y=-0.2), margin=dict(t=20, b=20))
                 st.plotly_chart(fig_comp, use_container_width=True)
-            
+
         st.markdown("---")
 
         # -------------------------------------------------------------
         # --- BLOQUE 2: TENDENCIA HISTÓRICA ---
         # -------------------------------------------------------------
-        st.subheader("📈 Tendencia Histórica de Largo Plazo")
+        st.subheader(f"📈 Tendencia de Largo Plazo ({simbolo})")
         col_tipo, col_var = st.columns([0.3, 0.7])
         
         with col_tipo:
-            tipo_h = st.radio("Ver tendencia de:", ["Montos Mensuales (Bs.)", "Ratios Técnicos (%)"], horizontal=True)
+            tipo_h = st.radio("Ver tendencia de:", [f"Montos Mensuales ({simbolo})", "Ratios Técnicos (%)"], horizontal=True)
         
         with col_var:
-            if tipo_h == "Montos Mensuales (Bs.)":
+            if tipo_h == f"Montos Mensuales ({simbolo})":
                 opciones_h = ['PNC Mensual Real', 'SI Monto', 'Resultado Técnico Neto', 'Saldo Operaciones']
-                labels = {'PNC Mensual Real': 'PNC (Desac.)', 'SI Monto': 'Siniestros', 'Resultado Técnico Neto': 'Res. Técnico', 'Saldo Operaciones': 'Saldo Operaciones'}
+                labels = {'PNC Mensual Real': 'PNC (Flujo)', 'SI Monto': 'Siniestros', 'Resultado Técnico Neto': 'Res. Técnico', 'Saldo Operaciones': 'Saldo Operaciones'}
                 default_h = ['PNC Mensual Real']
             else:
                 opciones_h = ['SI (%)', 'Índice Combinado (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'REA (%)']
@@ -451,16 +546,17 @@ if df_compilado is not None:
                 labels = {opt: opt for opt in opciones_h}
                 default_h = ['SI (%)', 'Índice Combinado (%)']
             
-            vars_seleccionadas = st.multiselect("Seleccione indicadores:", opciones_h, default=default_h)
+            vars_sel = st.multiselect("Indicadores:", opciones_h, default=default_h)
 
-        if vars_seleccionadas:
+        if vars_sel:
             fig_h = go.Figure()
-            for v in vars_seleccionadas:
+            for v in vars_sel:
                 fig_h.add_trace(go.Scatter(
                     x=df_timeline['Fecha'], y=df_timeline[v], name=labels.get(v, v),
                     mode='lines+markers', hovertemplate='<b>%{x|%B %Y}</b><br>'+labels.get(v,v)+': %{y:,.2f}<extra></extra>'
                 ))
-            fig_h.update_layout(template="plotly_dark", hovermode="x unified", xaxis=dict(rangeslider=dict(visible=True), type="date"))
+            fig_h.update_layout(template="plotly_dark", height=500, hovermode="x unified", 
+                               xaxis=dict(rangeslider=dict(visible=True), type="date"))
             st.plotly_chart(fig_h, use_container_width=True)
 
     # -----------------------------------------------------------------
@@ -558,7 +654,7 @@ if df_compilado is not None:
 
             st.plotly_chart(fig_donut, use_container_width=True)
 
-# --- BLOQUE: EVOLUCIÓN MENSUAL (CON FORMATO Bs. Y FILTRO DINÁMICO) ---
+# --- BLOQUE: EVOLUCIÓN MENSUAL (DOLARIZADA Y DESACUMULADA POR RAMOS) ---
         st.subheader(f"📊 Producción Real Mensual por Ramo ({ano_actual})")
 
         mapa_meses = {
@@ -574,57 +670,71 @@ if df_compilado is not None:
             df_year['MES_NUM'] = df_year['MES'].map(mapa_meses)
             df_evol = df_year.groupby(['MES_NUM', 'MES'])[columnas_ramos].sum().sort_index().reset_index()
             
-            # Desacumular ramos
-            df_mensual_real = df_evol[columnas_ramos].diff().fillna(df_evol[columnas_ramos].iloc[0])
-                        
-            total_pnc_mensual = df_mensual_real[columnas_ramos].sum(axis=1)
+            # 1. Desacumular flujos en Bolívares primero
+            df_mensual_bs = df_evol[columnas_ramos].diff().fillna(df_evol[columnas_ramos].iloc[0])
             
-            # Identificar Top 6 (Excluyendo Fianza)
-            ultima_foto_acum = df_evol.iloc[-1][columnas_ramos].sort_values(ascending=False)
-            top_6_global = [r for r in ultima_foto_acum.index if r.upper() != 'FIANZA'][:6]
-            
-            # Otros = Total - Suma(Top 6)
-            suma_top_6 = df_mensual_real[top_6_global].sum(axis=1)
-            df_mensual_real['OTROS RAMOS'] = total_pnc_mensual - suma_top_6
-            df_mensual_real['OTROS RAMOS'] = df_mensual_real['OTROS RAMOS'].clip(lower=0)
-            
-            df_mensual_real['MES'] = df_evol['MES']
-            df_mensual_real['MES_NUM'] = df_evol['MES_NUM']
+            # 2. Aplicar Dolarización por mes (usando TasaPromedio porque es producción/flujo)
+            if moneda == "USD":
+                for idx, row in df_evol.iterrows():
+                    m_nombre = row['MES']
+                    # Buscar tasa promedio del mes específico
+                    reg_t = df_tas[(df_tas['AÑO'] == ano_actual) & (df_tas['MES'].str.strip().str.capitalize() == m_nombre.capitalize())]
+                    col_t = next((c for c in reg_t.columns if 'PROMEDIO' in c.upper()), None)
+                    tasa = reg_t[col_t].values[0] if col_t and not reg_t.empty else 1.0
+                    
+                    # Convertir toda la fila de ramos de ese mes a USD
+                    df_mensual_bs.iloc[idx] = df_mensual_bs.iloc[idx] / tasa
+                
+                simbolo_grafico = "$"
+                func_formato = formato_ves
+            else:
+                simbolo_grafico = "Bs."
+                func_formato = formato_ves
 
-            # Filtro por mes seleccionado
-            df_plot_mensual = df_mensual_real[df_mensual_real['MES_NUM'] <= mes_corte_num].copy()
+            # 3. Identificar Top 6 y "Otros" sobre los datos ya procesados
+            total_pnc_mensual = df_mensual_bs.sum(axis=1)
+            ultima_foto_mes = df_mensual_bs.iloc[-1].sort_values(ascending=False)
+            top_6_global = [r for r in ultima_foto_mes.index if r.upper() != 'FIANZA'][:6]
+            
+            df_mensual_bs['OTROS RAMOS'] = total_pnc_mensual - df_mensual_bs[top_6_global].sum(axis=1)
+            df_mensual_bs['OTROS RAMOS'] = df_mensual_bs['OTROS RAMOS'].clip(lower=0)
+            
+            df_mensual_bs['MES'] = df_evol['MES']
+            df_mensual_bs['MES_NUM'] = df_evol['MES_NUM']
+
+            # 4. Filtro por mes seleccionado
+            df_plot = df_mensual_bs[df_mensual_bs['MES_NUM'] <= mes_corte_num].copy()
             
             fig_barras = go.Figure()
             secuencia_azules = ['#D1E9F6', '#A1C8E4', '#71A8D4', '#4682A9', '#1A5F7A', '#00425A', '#002B36']
             
-            for i, row in df_plot_mensual.iterrows():
+            for i, row in df_plot.iterrows():
                 mes_iter = row['MES']
                 ramos_x = top_6_global + ['OTROS RAMOS']
                 valores_y = [row[r] for r in ramos_x]
                 
-                # --- APLICACIÓN DE FORMATO Bs. ---
-                # Si el valor es > 0, aplicamos formato_ves y agregamos " Bs."
-                etiquetas_bs = [f"{formato_ves(v)} Bs." if v > 0 else "" for v in valores_y]
+                # Etiquetas dinámicas según moneda
+                etiquetas = [f"{func_formato(v)} {simbolo_grafico}" if v > 0 else "" for v in valores_y]
                 
                 fig_barras.add_trace(go.Bar(
                     x=ramos_x,
                     y=valores_y,
                     name=mes_iter,
                     marker_color=secuencia_azules[i % len(secuencia_azules)],
-                    text=etiquetas_bs, # Etiquetas con formato completo
+                    text=etiquetas,
                     textposition='outside',
-                    cliponaxis=False, # Evita que se corte el texto arriba
-                    hovertemplate="<b>" + mes_iter + "</b><br>Ramo: %{x}<br>Monto: %{y:,.2f} Bs.<extra></extra>"
+                    cliponaxis=False,
+                    hovertemplate=f"<b>{mes_iter}</b><br>Ramo: %{{x}}<br>Monto: %{{y:,.2f}} {simbolo_grafico}<extra></extra>"
                 ))
 
             fig_barras.update_layout(
                 template="plotly_dark",
                 barmode='group',
-                height=600, # Aumenté un poco la altura para que las etiquetas respiren
+                height=600,
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                xaxis=dict(title="Ramos Principales", type='category'),
-                yaxis=dict(title="Bolívares (Bs.)", showgrid=True, gridcolor="rgba(255,255,255,0.1)"),
-                margin=dict(t=120) # Margen superior para los nombres de meses y etiquetas
+                xaxis=dict(title="Principales Ramos de Seguros", type='category'),
+                yaxis=dict(title=f"Volumen en {simbolo_grafico}", showgrid=True, gridcolor="rgba(255,255,255,0.1)"),
+                margin=dict(t=120)
             )
 
             st.plotly_chart(fig_barras, use_container_width=True)
@@ -700,7 +810,7 @@ if df_compilado is not None:
                                 st.markdown(f"""<div style="background-color: {colores_inf[rank]}; color: white; padding: 8px; border-radius: 3px; margin-top: 4px; text-align: center; border-left: 3px solid white;"><p style="margin: 0; font-size: 0.6em; font-weight: bold; line-height: 1.1;">{ramo}</p><p style="margin: 0; font-size: 0.75em; font-weight: bold;">{pct:.1f}%</p></div>""", unsafe_allow_html=True)
                     st.write("")
 
-# --- NIVEL 3: SERIE TEMPORAL POR RAMO (ESTILO COMPARATIVO CON DEFAULT) ---
+# --- NIVEL 3: SERIE TEMPORAL POR RAMO (ESTILO COMPARATIVO DOLARIZADO) ---
         st.subheader("🔍 Evolución Histórica Mensual")
         
         # 1. Definimos los ramos predeterminados
@@ -713,7 +823,7 @@ if df_compilado is not None:
         ramos_sel = st.multiselect(
             "Seleccione los ramos para comparar la evolución real mensual:", 
             options=sorted(columnas_ramos),
-            default=seleccion_inicial # <--- Aquí cargan tus 3 ramos automáticamente
+            default=seleccion_inicial
         )
 
         if ramos_sel:
@@ -721,52 +831,65 @@ if df_compilado is not None:
             
             # Ordenar por fecha para que las líneas no zigzagueen
             df_r_hist = df_r_hist.sort_values(['NombreCorto', 'Fecha'])
+            simbolo_l = "$" if moneda == "USD" else "Bs."
 
             # Colores vivos para contraste sobre fondo oscuro
             colores_vivos = ['#00d4ff', '#ff4b4b', '#00ff85', '#ffeb3b', '#e91e63', '#ffffff']
 
+            # Diccionario de meses para la conversión
+            m_map = {1:'Enero', 2:'Febrero', 3:'Marzo', 4:'Abril', 5:'Mayo', 6:'Junio',
+                     7:'Julio', 8:'Agosto', 9:'Septiembre', 10:'Octubre', 11:'Noviembre', 12:'Diciembre'}
+
             for i, ramo in enumerate(ramos_sel):
-                # Cálculo del valor mensual (Resta del acumulado)
+                # A. Cálculo del valor mensual desacumulado (en Bs.)
                 col_temp = f"Temp_{ramo}"
                 df_r_hist[col_temp] = df_r_hist.groupby(['NombreCorto', 'AÑO'])[ramo].diff().fillna(df_r_hist[ramo])
                 
-                # Agrupar por fecha para el total mercado
-                serie_ramo = df_r_hist.groupby('Fecha', as_index=False)[col_temp].sum().sort_values('Fecha')
+                # B. Agrupar por fecha para el total mercado (Suma de todas las compañías para ese ramo)
+                serie_ramo = df_r_hist.groupby(['Fecha', 'AÑO'], as_index=False)[col_temp].sum()
+                serie_ramo = serie_ramo.sort_values('Fecha')
 
-                # Crear la línea (Scatter con markers)
+                # C. Aplicar Dolarización dinámica punto por punto si aplica
+                if moneda == "USD":
+                    def convertir_punto(row):
+                        mes_n = m_map[row['Fecha'].month]
+                        reg_t = df_tas[(df_tas['AÑO'] == row['AÑO']) & (df_tas['MES'].str.strip().str.capitalize() == mes_n)]
+                        col_t = next((c for c in reg_t.columns if 'PROMEDIO' in c.upper()), None)
+                        tasa = reg_t[col_t].values[0] if col_t and not reg_t.empty else 1.0
+                        return row[col_temp] / tasa
+                    
+                    serie_ramo['Valor_Final'] = serie_ramo.apply(convertir_punto, axis=1)
+                else:
+                    serie_ramo['Valor_Final'] = serie_ramo[col_temp]
+
+                # D. Crear la línea
                 fig_linea.add_trace(go.Scatter(
                     x=serie_ramo['Fecha'], 
-                    y=serie_ramo[col_temp],
+                    y=serie_ramo['Valor_Final'],
                     mode='lines+markers',
                     name=ramo,
                     line=dict(width=3, color=colores_vivos[i % len(colores_vivos)]),
-                    marker=dict(size=8),
-                    # Formato del texto al pasar el mouse
-                    hovertemplate="%{y:,.2f} Bs.<extra></extra>"
+                    marker=dict(size=7),
+                    hovertemplate=f"%{{y:,.2f}} {simbolo_l}<extra></extra>"
                 ))
 
-            # 4. Diseño del gráfico (Layout - El estilo que te gusta)
+            # 4. Diseño del gráfico
             fig_linea.update_layout(
                 template="plotly_dark", 
-                height=500,
-                # Muestra todos los valores al pasar el mouse
+                height=550,
                 hovermode="x unified",
                 hoverlabel=dict(bgcolor="rgba(33, 33, 33, 0.9)", font_size=13),
-                legend=dict(
-                    orientation="h", 
-                    yanchor="bottom", y=1.02, 
-                    xanchor="center", x=0.5
-                ),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
                 xaxis=dict(
                     title="Periodo Mensual",
                     showgrid=False,
-                    rangeslider=dict(visible=True) # El slider de tiempo abajo
+                    rangeslider=dict(visible=True),
+                    type="date"
                 ),
                 yaxis=dict(
-                    title="Bolívares (Bs.)", 
+                    title=f"Monto Mensual ({simbolo_l})", 
                     showgrid=True, 
-                    gridcolor="rgba(255,255,255,0.1)",
-                    tickformat=",." # Formato de miles con comas
+                    gridcolor="rgba(255,255,255,0.1)"
                 ),
                 margin=dict(t=100, l=10, r=10, b=10)
             )
@@ -776,7 +899,7 @@ if df_compilado is not None:
             st.info("💡 Por favor, selecciona uno o más ramos para generar la comparativa temporal.")
 
 # --- 5. PERFIL INDIVIDUAL DE COMPAÑÍA ---
-    elif menu == "🏢 Resumen por Empresa":
+    elif menu == "🏢 Resumen por Empresa":        
         st.title(f"🏢 Resumen {st.session_state.empresa_memoria}: {mes_actual} {ano_actual}")
         
         # 2. PREPARAR LISTA ORDENADA
@@ -784,14 +907,12 @@ if df_compilado is not None:
         lista_empresas = df_ranking['NombreCorto'].tolist()
         
         # 3. DETERMINAR EL ÍNDICE ACTUAL
-        # Esto busca dónde está la empresa guardada para que el selector aparezca ahí
         try:
             idx_persistente = lista_empresas.index(st.session_state.empresa_memoria)
         except ValueError:
             idx_persistente = 0
 
-        # 4. EL SELECTOR (IMPORTANTE: Cambiamos la key a 'selector_empresa')
-        # Usamos una key distinta para el widget y actualizamos la 'empresa_memoria' con la función
+        # 4. EL SELECTOR
         st.selectbox(
             "Seleccione una Empresa:", 
             lista_empresas, 
@@ -803,47 +924,99 @@ if df_compilado is not None:
         # 5. SINCRONIZAR LA VARIABLE DE FILTRADO
         empresa_sel = st.session_state.empresa_memoria
         
-        # 6. FILTRO DE DATOS
-        # Ahora sí, extraemos la información de la empresa seleccionada
+        # 6. FILTRO DE DATOS (Empresa Actual)
         df_emp = df_act[df_act['NombreCorto'] == empresa_sel].iloc[0]
+
+        # 7. FILTRO DE DATOS (Empresa Año Anterior) - CRÍTICO PARA VARIACIONES
+        df_emp_ant_aa = df_compilado[
+            (df_compilado['AÑO'] == ano_actual - 1) & 
+            (df_compilado['MES'].str.capitalize() == mes_actual.capitalize()) & 
+            (df_compilado['NombreCorto'] == empresa_sel)
+        ]
         
-# --- FILA 1: INDICADORES (TARJETAS) USANDO FORMATEO DE MERCADO ---
-        c1, c2, c3, c4, c5 = st.columns(5)
-        
-        # 1. Obtener datos año anterior (Usando df_ant que ya filtraste en Mercado)
-        df_emp_ant_aa = df_ant[df_ant['NombreCorto'] == empresa_sel]
-        
-        # 2. Valores actuales
+# --- FILA 1: INDICADORES (TARJETAS) CON VARIACIONES Y FORMATO ---
+        simbolo = "$" if moneda == "USD" else "Bs."
+
+        # 1. Definición base para Gauges (Siempre en Bs.)
         pnc_ind = df_emp['PrimasNetasCobradas']
-        so_act = df_emp['SaldodeOperaciones']
-        rtn_act = df_emp['ResultadoTecnicoNeto']
-        
-        # 3. Valores año anterior
-        pnc_ant_aa = df_emp_ant_aa['PrimasNetasCobradas'].iloc[0] if not df_emp_ant_aa.empty else 0
-        so_ant_aa = df_emp_ant_aa['SaldodeOperaciones'].iloc[0] if not df_emp_ant_aa.empty else 0
 
-        # 4. Variaciones % (Cálculo idéntico al de mercado)
-        var_pnc = ((pnc_ind / pnc_ant_aa) - 1) * 100 if pnc_ant_aa > 0 else 0
-        var_so = ((so_act / so_ant_aa) - 1) * 100 if so_ant_aa != 0 else 0
+        # 2. Variables de visualización (Lo que se muestra en el metric)
+        pnc_vis = pnc_ind
+        so_vis = df_emp['SaldodeOperaciones']
+        rtn_vis = df_emp['ResultadoTecnicoNeto']
+        si_vis = df_emp['TotalGenralSI']
 
-        # 5. Renderizado con st.metric (Mismo estilo que mercado)
+        # 3. Valores Año Anterior (Base en Bs.) para variaciones
+        pnc_comp_aa = df_emp_ant_aa['PrimasNetasCobradas'].iloc[0] if not df_emp_ant_aa.empty else 0
+        so_comp_aa = df_emp_ant_aa['SaldodeOperaciones'].iloc[0] if not df_emp_ant_aa.empty else 0
+
+        if moneda == "USD":
+            try:
+                # Tasa Cierre Actual
+                reg_tasa_act = df_tas[(df_tas['AÑO'] == ano_actual) & (df_tas['MES'].str.capitalize() == mes_actual.capitalize())]
+                t_cierre_act = reg_tasa_act['Tasa_Cierre'].values[0] if not reg_tasa_act.empty else 1.0
+                
+                # --- PNC Actual USD (Desacumulada) ---
+                idx_actual = meses_orden.index(mes_actual.capitalize())
+                meses_a_recorrer = meses_orden[:idx_actual + 1]
+                pnc_usd_actual = 0.0
+                acum_bs_prev = 0.0
+                for m in meses_a_recorrer:
+                    f_h = df_compilado[(df_compilado['AÑO'] == ano_actual) & (df_compilado['MES'].str.capitalize() == m.capitalize()) & (df_compilado['NombreCorto'] == empresa_sel)]
+                    if not f_h.empty:
+                        bs_m = f_h['PrimasNetasCobradas'].values[0]
+                        t_p = df_tas[(df_tas['AÑO'] == ano_actual) & (df_tas['MES'].str.capitalize() == m.capitalize())]['TasaPromedio'].values[0]
+                        pnc_usd_actual += ((bs_m - acum_bs_prev) / t_p)
+                        acum_bs_prev = bs_m
+                
+                # --- PNC Año Anterior USD (Desacumulada) ---
+                pnc_usd_aa = 0.0
+                acum_bs_prev_aa = 0.0
+                for m in meses_a_recorrer:
+                    f_h_aa = df_compilado[(df_compilado['AÑO'] == ano_actual - 1) & (df_compilado['MES'].str.capitalize() == m.capitalize()) & (df_compilado['NombreCorto'] == empresa_sel)]
+                    if not f_h_aa.empty:
+                        bs_m_aa = f_h_aa['PrimasNetasCobradas'].values[0]
+                        t_p_aa = df_tas[(df_tas['AÑO'] == ano_actual - 1) & (df_tas['MES'].str.capitalize() == m.capitalize())]['TasaPromedio'].values[0]
+                        pnc_usd_aa += ((bs_m_aa - acum_bs_prev_aa) / t_p_aa)
+                        acum_bs_prev_aa = bs_m_aa
+
+                # Tasa Cierre Año Anterior
+                reg_tasa_aa = df_tas[(df_tas['AÑO'] == ano_actual - 1) & (df_tas['MES'].str.capitalize() == mes_actual.capitalize())]
+                t_cierre_aa = reg_tasa_aa['Tasa_Cierre'].values[0] if not reg_tasa_aa.empty else 1.0
+
+                # Asignación para métricas
+                pnc_vis = pnc_usd_actual
+                pnc_comp_aa = pnc_usd_aa 
+                so_vis = so_vis / t_cierre_act
+                so_comp_aa = so_comp_aa / t_cierre_aa
+                rtn_vis = rtn_vis / t_cierre_act
+                si_vis = si_vis / t_cierre_act
+
+            except Exception as e:
+                st.sidebar.error(f"Error en conversión USD: {e}")
+
+        # 4. Cálculo de Variaciones finales (Comparación coherente Bs vs Bs o USD vs USD)
+        var_pnc = ((pnc_vis / pnc_comp_aa) - 1) * 100 if pnc_comp_aa > 0 else 0
+        var_so = ((so_vis / so_comp_aa) - 1) * 100 if so_comp_aa != 0 else 0
+
+        # 5. RENDERIZADO
+        c1, c2, c3, c4, c5 = st.columns(5)
+
         with c1:
-            st.metric("Primas Netas Cobradas", f"{formato_ves(pnc_ind)} Bs.", f"{var_pnc:.2f}% vs AA")
-        
+            st.metric("Primas Netas Cobradas", f"{formato_ves(pnc_vis)} {simbolo}", f"{var_pnc:.2f}% vs AA")
+
         with c2:
-            # Resultado Técnico: Sin variación, solo el monto
-            # Nota: st.metric pondrá el monto en blanco/gris por defecto
-            st.metric("Resultado Técnico", f"{formato_ves(rtn_act)} Bs.")
-            
+            st.metric("Resultado Técnico", f"{formato_ves(rtn_vis)} {simbolo}")
+
         with c3:
-            st.metric("Saldo de Operaciones", f"{formato_ves(so_act)} Bs.", f"{var_so:.2f}% vs AA")
+            st.metric("Saldo de Operaciones", f"{formato_ves(so_vis)} {simbolo}", f"{var_so:.2f}% vs AA")
 
         with c4:
             mkt_share = (pnc_ind / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
             st.metric("Participación Mercado", f"{mkt_share:.2f}%")
 
         with c5:
-            st.metric("Siniestros Incurridos", f"{formato_ves(df_emp['TotalGenralSI'])} Bs.")
+            st.metric("Siniestros Incurridos", f"{formato_ves(si_vis)} {simbolo}")
 
         st.markdown("---")
 
@@ -910,67 +1083,84 @@ if df_compilado is not None:
 # --- FILA 3: EVOLUCIÓN MENSUAL DINÁMICA ---
         st.markdown("---")
         st.write(f"#### 📈 Análisis Evolutivo Dinámico - {empresa_sel}")
-        
+
         # 1. Preparar el DataFrame histórico
         df_hist = df_compilado[
             (df_compilado['AÑO'] == ano_actual) & 
             (df_compilado['NombreCorto'] == empresa_sel)
         ].copy()
 
-        # 2. Ordenamiento cronológico
-        dict_meses = {mes: i+1 for i, mes in enumerate(meses_orden)}
-        df_hist['MES_NUM'] = df_hist['MES'].map(dict_meses)
-        df_hist = df_hist.sort_values('MES_NUM')
+        # 2. Normalización de meses
+        df_hist['MES'] = df_hist['MES'].str.strip().str.capitalize()
 
-        # 3. Cálculo de variables (Desmensualizadas y Directas)
-        df_hist['PNC_Mensual'] = df_hist['PrimasNetasCobradas'].diff().fillna(df_hist['PrimasNetasCobradas'])
-        df_hist['SI_Mensual'] = df_hist['TotalGenralSI'].diff().fillna(df_hist['TotalGenralSI'])
-        # 'ResultadoTecnicoNeto' y 'SaldodeOperaciones' se usan directo
+        # 3. Lógica de Dolarización (Copiando la seguridad de la Fila 1)
+        etiqueta_y = "Monto (Bs.)"
 
-        # --- NUEVO: SELECTOR DE VARIABLES ---
-        # Definimos un diccionario para que los nombres en el selector sean amigables
+        if moneda == "USD":
+            etiqueta_y = "Monto (USD)"
+            
+            # Función de ayuda para obtener tasas mes a mes (evita fallos de merge)
+            def obtener_tasa(mes_nombre, tipo_tasa):
+                reg = df_tas[(df_tas['AÑO'] == ano_actual) & (df_tas['MES'].str.strip().str.capitalize() == mes_nombre)]
+                if not reg.empty:
+                    # Buscamos la columna sin importar mayúsculas
+                    for col in reg.columns:
+                        if tipo_tasa.upper() in col.upper():
+                            return reg[col].values[0]
+                return 1.0
+
+            # Creamos las columnas de tasas una por una
+            df_hist['t_prom'] = df_hist['MES'].apply(lambda x: obtener_tasa(x, 'Promedio'))
+            df_hist['t_cier'] = df_hist['MES'].apply(lambda x: obtener_tasa(x, 'Cierre'))
+
+            # Calculamos variables (Desacumulando PNC y SI igual que en Fila 1)
+            df_hist = df_hist.sort_values('MES', key=lambda x: x.map({m.capitalize(): i for i, m in enumerate(meses_orden)}))
+            
+            df_hist['PNC_Mensual'] = (df_hist['PrimasNetasCobradas'].diff().fillna(df_hist['PrimasNetasCobradas'])) / df_hist['t_prom']
+            df_hist['SI_Mensual'] = (df_hist['TotalGenralSI'].diff().fillna(df_hist['TotalGenralSI'])) / df_hist['t_cier']
+            df_hist['ResultadoTecnicoNeto'] = df_hist['ResultadoTecnicoNeto'] / df_hist['t_cier']
+            df_hist['SaldodeOperaciones'] = df_hist['SaldodeOperaciones'] / df_hist['t_cier']
+        else:
+            # Lógica en Bolívares
+            df_hist = df_hist.sort_values('MES', key=lambda x: x.map({m.capitalize(): i for i, m in enumerate(meses_orden)}))
+            df_hist['PNC_Mensual'] = df_hist['PrimasNetasCobradas'].diff().fillna(df_hist['PrimasNetasCobradas'])
+            df_hist['SI_Mensual'] = df_hist['TotalGenralSI'].diff().fillna(df_hist['TotalGenralSI'])
+
+        # 4. Selector y Gráfico
         opciones_vars = {
             "PNC_Mensual": "Primas Netas (Mensual)",
             "SI_Mensual": "Siniestros (Mensual)",
             "ResultadoTecnicoNeto": "Resultado Técnico Neto",
             "SaldodeOperaciones": "Saldo de Operaciones"
         }
-        
-        # El multiselect permite al usuario elegir qué ver
+
         seleccionadas = st.multiselect(
             "Seleccione los indicadores a graficar:",
             options=list(opciones_vars.keys()),
-            default=["PNC_Mensual", "SI_Mensual"], # Variables que aparecen por defecto
+            default=["PNC_Mensual", "SI_Mensual"],
             format_func=lambda x: opciones_vars[x]
         )
 
         if seleccionadas and not df_hist.empty:
+            # Aseguramos que las columnas existan antes de graficar
+            cols_finales = [c for c in seleccionadas if c in df_hist.columns]
+            
             fig_line = px.line(
-                df_hist, 
-                x='MES', 
-                y=seleccionadas,
-                labels={'value': 'Monto (Bs.)', 'variable': 'Indicador'},
+                df_hist, x='MES', y=cols_finales,
+                labels={'value': etiqueta_y, 'variable': 'Indicador'},
                 markers=True,
-                title=f"Evolución de Indicadores Seleccionados - {ano_actual}",
-                color_discrete_map={
-                    "PNC_Mensual": "#2196F3", 
-                    "SI_Mensual": "#FF4B4B", 
-                    "ResultadoTecnicoNeto": "#00C853", 
-                    "SaldodeOperaciones": "#FFD600"
-                }
+                title=f"Evolución {moneda} - {empresa_sel}",
+                color_discrete_map={"PNC_Mensual": "#2196F3", "SI_Mensual": "#FF4B4B"}
             )
             
-            fig_line.update_layout(
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(l=20, r=20, t=50, b=20),
-                hovermode="x unified"
-            )
-            
+            fig_line.update_layout(hovermode="x unified", yaxis=dict(tickformat=","))
             st.plotly_chart(fig_line, use_container_width=True)
+
         elif not seleccionadas:
             st.warning("⚠️ Por favor, seleccione al menos un indicador para visualizar la gráfica.")
         else:
             st.info(f"No hay datos suficientes para {empresa_sel}.")
+
 # =================================================================
 # 5. MENSAJE DE PIE DE PÁGINA O ERROR
 # =================================================================
