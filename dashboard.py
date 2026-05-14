@@ -472,37 +472,57 @@ if df_compilado is not None:
         df_timeline['REA (%)'] = (-(df_timeline['ResultadodelReaseguroCedido']) / df_timeline['Total GeneralPDev'] * 100).fillna(0)
         df_timeline['Índice Combinado (%)'] = df_timeline['SI (%)'] + df_timeline['Com (%)'] + df_timeline['IA (%)'] + df_timeline['IGA (%)'] + df_timeline['REA (%)']
 
-        # -------------------------------------------------------------
-        # --- BLOQUE 1: COMPARATIVO INTERANUAL ---
+# -------------------------------------------------------------
+        # --- BLOQUE 1: COMPARATIVO INTERANUAL (FILTRADO POR MES) ---
         # -------------------------------------------------------------
         ano_previo = ano_actual - 1
         st.subheader(f"📊 Crecimiento Real: {ano_actual} vs {ano_previo} ({simbolo})")
 
-        df_act_line = df_timeline[df_timeline['AÑO'] == ano_actual].copy()
-        df_ant_line = df_timeline[df_timeline['AÑO'] == ano_previo].copy()
+        # 1. Definimos la lista exacta de meses y el corte numérico
+        nombres_meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                         'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+        
+        mapa_meses = {m: i+1 for i, m in enumerate(nombres_meses)}
+        mes_corte_num = mapa_meses.get(mes_actual, 12)
+
+        # 2. Filtrar DataFrames por año y aplicar el límite del mes seleccionado
+        df_act_line = df_timeline[
+            (df_timeline['AÑO'] == ano_actual) & 
+            (df_timeline['Fecha'].dt.month <= mes_corte_num)
+        ].copy()
+        
+        df_ant_line = df_timeline[
+            (df_timeline['AÑO'] == ano_previo) & 
+            (df_timeline['Fecha'].dt.month <= mes_corte_num)
+        ].copy()
 
         if not df_act_line.empty:
-            nombres_meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
-                             'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
-            
+            # Asignar nombres de meses usando tu lista original
             df_act_line['Mes_Nombre'] = df_act_line['Fecha'].dt.month.apply(lambda x: nombres_meses[x-1])
             df_ant_line['Mes_Nombre'] = df_ant_line['Fecha'].dt.month.apply(lambda x: nombres_meses[x-1])
 
             col_act, col_ant = str(ano_actual), str(ano_previo)
+            
+            # 3. Cruzar datos de ambos años
             df_comp = df_act_line[['Mes_Nombre', 'PNC Mensual Real']].rename(columns={'PNC Mensual Real': col_act}).merge(
                 df_ant_line[['Mes_Nombre', 'PNC Mensual Real']].rename(columns={'PNC Mensual Real': col_ant}),
                 on='Mes_Nombre', how='left'
             ).fillna(0)
 
+            # Forzar el orden categórico según tu lista original
             df_comp['Mes_Nombre'] = pd.Categorical(df_comp['Mes_Nombre'], categories=nombres_meses, ordered=True)
             df_comp = df_comp.sort_values('Mes_Nombre')
+            
+            # Cálculo de variaciones
             df_comp['Var%'] = ((df_comp[col_act] / df_comp[col_ant]) - 1) * 100
 
+            # Fila de TOTAL (Suma del periodo seleccionado: Enero -> Mes Corte)
             total_act, total_ant = df_comp[col_act].sum(), df_comp[col_ant].sum()
             total_var = ((total_act / total_ant) - 1) * 100 if total_ant != 0 else 0
             df_total = pd.DataFrame({'Mes_Nombre': ['TOTAL'], col_act: [total_act], col_ant: [total_ant], 'Var%': [total_var]})
             df_comp_final = pd.concat([df_comp, df_total], ignore_index=True)
 
+            # 4. Renderizado de Interfaz
             col_t, col_g = st.columns([1, 1.6])
             with col_t:
                 st.write(f"**📝 Primaje Mensual ({simbolo})**")
@@ -520,8 +540,14 @@ if df_compilado is not None:
                 fig_comp.add_trace(go.Bar(x=df_comp['Mes_Nombre'], y=df_comp[col_ant], name=f'{ano_previo}', marker_color='#91C8E4'))
                 fig_comp.add_trace(go.Bar(x=df_comp['Mes_Nombre'], y=df_comp[col_act], name=f'{ano_actual}', marker_color='#1A5F7A'))
                 fig_comp.add_trace(go.Scatter(x=df_comp['Mes_Nombre'], y=df_comp['Var%'], name='Var %', yaxis='y2', line=dict(color='#00D4FF', width=3)))
-                fig_comp.update_layout(template="plotly_dark", height=400, yaxis2=dict(overlaying='y', side='right', showgrid=False), 
-                                      legend=dict(orientation="h", y=-0.2), margin=dict(t=20, b=20))
+                
+                fig_comp.update_layout(
+                    template="plotly_dark", height=400, 
+                    yaxis2=dict(overlaying='y', side='right', showgrid=False, title="Variación %"), 
+                    legend=dict(orientation="h", y=-0.2), 
+                    margin=dict(t=20, b=20),
+                    hovermode="x unified"
+                )
                 st.plotly_chart(fig_comp, use_container_width=True)
 
         st.markdown("---")
