@@ -116,22 +116,40 @@ df_compilado, df_ramos, df_tas = cargar_datos_maestros()
 meses_orden = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
                'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
 if df_compilado is not None:
-    # --- BARRA LATERAL (Panel de Control) ---
+# --- BARRA LATERAL (Panel de Control) ---
     st.sidebar.title("🎮 Panel de Control")
-    st.sidebar.markdown("Configure los filtros de tiempo y navegación.")
-    
-    # Selectores de tiempo
+
+    # 1. Selector de Año
     lista_años = sorted(df_compilado['AÑO'].unique(), reverse=True)
     ano_actual = st.sidebar.selectbox("Seleccione el Año", lista_años, index=0)
-    
+
+    # 2. Preparar lista de meses para el año seleccionado
     meses_disponibles = df_compilado[df_compilado['AÑO'] == ano_actual]['MES'].unique()
     lista_meses = [m for m in meses_orden if m in meses_disponibles]
-    ultimo_mes_idx = len(lista_meses) - 1 if len(lista_meses) > 0 else 0
-    mes_actual = st.sidebar.selectbox("Seleccione el Mes", lista_meses, index=ultimo_mes_idx)
-    moneda = st.sidebar.radio("Seleccione Tipo de Moneda", ["VES", "USD"])
 
+    # --- LÓGICA DE PERSISTENCIA DEL MES (MEMORIA) ---
+    if 'mes_memoria' not in st.session_state:
+        # La primera vez, apuntamos al último mes disponible (ej. Marzo)
+        idx_inicio = len(lista_meses) - 1 if lista_meses else 0
+    else:
+        # Si cambiamos de año, intentamos encontrar el mes que ya teníamos
+        if st.session_state['mes_memoria'] in lista_meses:
+            idx_inicio = lista_meses.index(st.session_state['mes_memoria'])
+        else:
+            # Si el mes no existe en el nuevo año, vamos al último disponible
+            idx_inicio = len(lista_meses) - 1 if lista_meses else 0
+
+    mes_actual = st.sidebar.selectbox(
+        "Seleccione el Mes", 
+        lista_meses, 
+        index=idx_inicio
+    )
+
+    # Actualizamos la memoria con la selección actual
+    st.session_state['mes_memoria'] = mes_actual
+
+    moneda = st.sidebar.radio("Seleccione Tipo de Moneda", ["VES", "USD"])
     st.sidebar.markdown("---")
-    
     # Selector de Sección
     menu = st.sidebar.radio(
         "Ir a la sección:",
