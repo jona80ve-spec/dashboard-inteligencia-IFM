@@ -613,90 +613,87 @@ if df_compilado is not None:
         df_r_hist = df_ramos.copy()
         df_r_hist['Fecha'] = pd.to_datetime(df_r_hist['Fecha'])
         
+        def formato_latino(valor):
+            return "{:,.2f}".format(valor).replace(",", "X").replace(".", ",").replace("X", ".")
+        
         exclusiones = [
             'Cod', 'Nombre Empresa', 'NombreCorto', 'AÑO', 'MES', 
             'CIERRE AL', 'Acumulada Al', 'Fecha', 'NumerodeInscripciondelaEmpresa',
             'TOTAL PNC', 'TOTAL VIDA', 'TOTAL HCM', 'TOTAL NO VIDA', 
-            'TOTAL PATRIMONIALES', 'TOTAL OBLIGACIONALES', 'NombreCorto']
+            'TOTAL PATRIMONIALES', 'TOTAL OBLIGACIONALES']
+        
         columnas_ramos = [c for c in df_r_hist.select_dtypes(include=['number']).columns 
                          if c not in exclusiones and "TOTAL" not in c.upper()]
 
-# --- NIVEL 1: MIX DE MERCADO (CORRECCIÓN DE PORCENTAJES Y FORMATO) ---
-        st.subheader(f"🌀 Composición por Ramos💼: Distribución Total Mercado 🌐 (Acumulado a {mes_actual})")
-        
-        df_mes_rad = df_r_hist[(df_r_hist['AÑO'] == ano_actual) & (df_r_hist['MES'] == mes_actual)].copy()
-        
-        if not df_mes_rad.empty:
-            # 1. Preparación de datos
-            all_data = df_mes_rad[columnas_ramos].sum().sort_values(ascending=False).reset_index()
-            all_data.columns = ['Ramo', 'Monto']
-            total_mercado = all_data['Monto'].sum()
-            
-            mask_fianza = all_data['Ramo'].str.upper() == 'FIANZA'
-            top_6 = all_data[~mask_fianza].head(6).copy()
-            nombres_top6 = top_6['Ramo'].tolist()
-            monto_resto = all_data[~all_data['Ramo'].isin(nombres_top6)]['Monto'].sum()
-            
-            df_resto = pd.DataFrame({'Ramo': ['RESTO DE RAMOS'], 'Monto': [monto_resto]})
-            data_don = pd.concat([top_6, df_resto]).sort_values(by='Monto', ascending=False)
+        st.subheader(f"🌀 Composición por Ramos: Comparativo de Segmentos Mercado 🌐 (Acumulado a {mes_actual})")
 
-            # --- CORRECCIÓN DE CÁLCULO ---
-            # Calculamos el porcentaje real manualmente para evitar el error de 0.40%
-            data_don['Porcentaje_Real'] = (data_don['Monto'] / total_mercado) * 100
+        df_base_ramos = df_r_hist[(df_r_hist['AÑO'] == ano_actual) & (df_r_hist['MES'] == mes_actual)].copy()
 
-            # 2. Paleta de colores Premium
+        if not df_base_ramos.empty:
+            ranking_ramos = df_base_ramos.sort_values('TOTAL PNC', ascending=False)
+            top_10_ramos = ranking_ramos.head(10)['NombreCorto'].tolist()
+            next_10_ramos = ranking_ramos.iloc[10:20]['NombreCorto'].tolist()
+
+            def preparar_data_donut_v2(df_segmento):
+                if df_segmento.empty: return pd.DataFrame()
+                all_data = df_segmento[columnas_ramos].sum().sort_values(ascending=False).reset_index()
+                all_data.columns = ['Ramo', 'Monto']
+                total_seg = all_data['Monto'].sum()
+                if total_seg == 0: return pd.DataFrame()
+                mask_fianza = all_data['Ramo'].str.upper() == 'FIANZA'
+                top_6 = all_data[~mask_fianza].head(6).copy()
+                monto_resto = all_data[~all_data['Ramo'].isin(top_6['Ramo'].tolist())]['Monto'].sum()
+                df_resto = pd.DataFrame({'Ramo': ['RESTO DE RAMOS'], 'Monto': [monto_resto]})
+                final_df = pd.concat([top_6, df_resto]).sort_values(by='Monto', ascending=False)
+                final_df['Porcentaje_Real'] = (final_df['Monto'] / total_seg) * 100
+                return final_df
+
+            data_mercado = preparar_data_donut_v2(df_base_ramos)
+            data_top10 = preparar_data_donut_v2(df_base_ramos[df_base_ramos['NombreCorto'].isin(top_10_ramos)])
+            data_next10 = preparar_data_donut_v2(df_base_ramos[df_base_ramos['NombreCorto'].isin(next_10_ramos)])
+
             paleta_azul_premium = ["#004b93", "#007ab3", "#00a9e0", "#4ec3e0", "#9adbe8", "#c5e9f3", "#34495e"]
 
-            # 3. Función para formato latino (1.000,00)
-            def formato_latino(valor):
-                return "{:,.2f}".format(valor).replace(",", "X").replace(".", ",").replace("X", ".")
+            def render_donut(df, centro_text):
+                if df is None or df.empty: return None
+                df['Etiqueta_Texto'] = df.apply(lambda x: f"{x['Ramo']}<br>{formato_latino(x['Porcentaje_Real'])}%", axis=1)
+                
+                fig = px.pie(df, values='Monto', names='Ramo', hole=0.5, template="plotly_dark", color_discrete_sequence=paleta_azul_premium)
+                
+                fig.update_traces(
+                    direction='clockwise', rotation=30, 
+                    textposition='outside',
+                    text=df['Etiqueta_Texto'], textinfo='text',
+                    marker=dict(line=dict(color='#0e1117', width=2)),
+                    customdata=df['Monto'].apply(formato_latino),
+                    hovertemplate='<b>%{label}</b><br>Monto: %{customdata} Bs.<extra></extra>',
+                    # --- AQUÍ ESTÁ EL TRUCO PARA EL TAMAÑO ---
+                    domain=dict(x=[0.1, 0.9], y=[0.1, 0.9]) 
+                )
+                
+                fig.update_layout(
+                    showlegend=False,
+                    annotations=[dict(text=centro_text, x=0.5, y=0.5, font_size=12, showarrow=False, font_family="Arial Black")],
+                    # Forzamos márgenes fijos para que no varíe el radio
+                    margin=dict(t=60, b=60, l=10, r=10), 
+                    height=450,
+                    autosize=False
+                )
+                return fig
 
-            # 4. Creación del Gráfico Donut
-            import plotly.express as px
-
-            fig_donut = px.pie(
-                data_don, 
-                values='Monto', 
-                names='Ramo', 
-                hole=0.5, 
-                template="plotly_dark",
-                color_discrete_sequence=paleta_azul_premium
-            )
-
-            # 5. AJUSTE DE ETIQUETAS MANUALES
-            # Usamos text para forzar el formato corregido
-            data_don['Etiqueta_Texto'] = data_don.apply(
-                lambda x: f"{x['Ramo']}<br>{formato_latino(x['Porcentaje_Real'])}%", axis=1
-            )
-
-            fig_donut.update_traces(
-                direction='clockwise', 
-                rotation=30,
-                textposition='outside',
-                text=data_don['Etiqueta_Texto'], # Aplicamos la etiqueta calculada
-                textinfo='text',                 # Decimos a Plotly que use nuestro texto, no el suyo
-                marker=dict(line=dict(color='#0e1117', width=2)),
-                pull=[0.05 if i == 0 else 0 for i in range(len(data_don))],
-                customdata=data_don['Monto'].apply(formato_latino),
-                hovertemplate='<b>%{label}</b><br>Monto: %{customdata} Bs.<extra></extra>'
-            )
-
-            # 6. Texto central y márgenes
-            fig_donut.update_layout(
-                showlegend=False, 
-                annotations=[dict(
-                    text=f"{mes_actual}<br>{ano_actual}", 
-                    x=0.5, y=0.5, 
-                    font_size=20, 
-                    showarrow=False, 
-                    font_family="Arial Black",
-                    font_color="white"
-                )],
-                margin=dict(t=80, b=80, l=20, r=20),
-                height=600
-            )
-
-            st.plotly_chart(fig_donut, use_container_width=True)
+            c1, c2, c3 = st.columns(3)
+            with c1:
+                st.markdown("<center><b>🌐 TOTAL MERCADO</b></center>", unsafe_allow_html=True)
+                f1 = render_donut(data_mercado, f"MERCADO<br>{ano_actual}")
+                if f1: st.plotly_chart(f1, use_container_width=True)
+            with c2:
+                st.markdown("<center><b>🏆 TOP 10 EMPRESAS</b></center>", unsafe_allow_html=True)
+                f2 = render_donut(data_top10, f"TOP 10<br>PNC")
+                if f2: st.plotly_chart(f2, use_container_width=True)
+            with c3:
+                st.markdown("<center><b>📊 SEGUNDAS 10 (11-20)</b></center>", unsafe_allow_html=True)
+                f3 = render_donut(data_next10, f"TOP 11-20<br>PNC")
+                if f3: st.plotly_chart(f3, use_container_width=True)
 
 # --- BLOQUE: EVOLUCIÓN MENSUAL (DOLARIZADA Y DESACUMULADA POR RAMOS) ---
         st.subheader(f"📊 Producción Real Mensual por Ramo ({ano_actual})")
