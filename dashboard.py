@@ -780,12 +780,17 @@ if df_compilado is not None:
 
             st.plotly_chart(fig_barras, use_container_width=True)
 
-        # --- NIVEL 2: INFOGRAFÍA TOP 3 POR EMPRESA (ACUMULADO YTD) ---
+# --- NIVEL 2: INFOGRAFÍA TOP 3 POR EMPRESA (ACUMULADO YTD) ---
         st.subheader(f"🏆 Top 3 Ramos por Empresa (Acumulado a {mes_actual})")
         
-        df_r_ytd = df_mes_rad.copy()
+        # Corregimos la variable: usamos df_base_ramos que es la que definimos arriba
+        df_r_ytd = df_base_ramos.copy()
+        
+        # Calculamos el total por fila para sacar los porcentajes
         df_r_ytd['Total_YTD'] = df_r_ytd[columnas_ramos].sum(axis=1)
-        top_10_ytd = df_r_ytd.nlargest(10, 'Total_YTD')
+        
+        # Ordenamos por producción para obtener el Top 10
+        top_10_ytd = df_r_ytd.nlargest(10, 'TOTAL PNC')
 
         # Dibujamos en 2 filas de 5
         filas_infog = [top_10_ytd.iloc[0:5], top_10_ytd.iloc[5:10]]
@@ -795,7 +800,7 @@ if df_compilado is not None:
                 with cols_inf[i]:
                     st.markdown(f"""<div style="background-color: #1b263b; color: white; padding: 8px; text-align: center; border-radius: 5px; font-size: 0.75em; font-weight: bold; min-height: 45px; display: flex; align-items: center; justify-content: center; border: 1px solid #415a77;">{row['NombreCorto']}</div>""", unsafe_allow_html=True)
                     top_3 = row[columnas_ramos].astype(float).nlargest(3)
-                    colores_inf = ["#00509d", "#007ea7", "#00a8e8"]
+                    colores_inf = ["#004b93", "#007ab3", "#00a9e0"]
                     for rank, (ramo, valor) in enumerate(top_3.items()):
                         pct = (valor / row['Total_YTD'] * 100) if row['Total_YTD'] > 0 else 0
                         st.markdown(f"""<div style="background-color: {colores_inf[rank]}; color: white; padding: 8px; border-radius: 3px; margin-top: 4px; text-align: center; border-left: 3px solid white;"><p style="margin: 0; font-size: 0.6em; font-weight: bold; line-height: 1.1;">{ramo}</p><p style="margin: 0; font-size: 0.75em; font-weight: bold;">{pct:.1f}%</p></div>""", unsafe_allow_html=True)
@@ -803,11 +808,11 @@ if df_compilado is not None:
 
         st.markdown("---")
 
-# --- NIVEL 2.1: INFOGRAFÍA 11 AL 20 ---
+        # --- NIVEL 2.1: INFOGRAFÍA 11 AL 20 ---
         st.subheader(f"🏆 Top 3 Ramos: Empresas 11 al 20")
         
-        # Obtenemos las empresas del 11 al 20
-        top_11_20_ytd = df_r_ytd.nlargest(20, 'Total_YTD').iloc[10:20]
+        # Obtenemos las empresas del 11 al 20 usando la misma lógica
+        top_11_20_ytd = df_r_ytd.sort_values('TOTAL PNC', ascending=False).iloc[10:20]
 
         if not top_11_20_ytd.empty:
             filas_11_20 = [top_11_20_ytd.iloc[0:5], top_11_20_ytd.iloc[5:10]]
@@ -817,7 +822,7 @@ if df_compilado is not None:
                     with cols_inf[i]:
                         st.markdown(f"""<div style="background-color: #1b263b; color: white; padding: 8px; text-align: center; border-radius: 5px; font-size: 0.75em; font-weight: bold; min-height: 45px; display: flex; align-items: center; justify-content: center; border: 1px solid #415a77;">{row['NombreCorto']}</div>""", unsafe_allow_html=True)
                         top_3 = row[columnas_ramos].astype(float).nlargest(3)
-                        colores_inf = ["#00509d", "#007ea7", "#00a8e8"]
+                        colores_inf = ["#004b93", "#007ab3", "#00a9e0"]
                         for rank, (ramo, valor) in enumerate(top_3.items()):
                             pct = (valor / row['Total_YTD'] * 100) if row['Total_YTD'] > 0 else 0
                             st.markdown(f"""<div style="background-color: {colores_inf[rank]}; color: white; padding: 8px; border-radius: 3px; margin-top: 4px; text-align: center; border-left: 3px solid white;"><p style="margin: 0; font-size: 0.6em; font-weight: bold; line-height: 1.1;">{ramo}</p><p style="margin: 0; font-size: 0.75em; font-weight: bold;">{pct:.1f}%</p></div>""", unsafe_allow_html=True)
@@ -825,19 +830,16 @@ if df_compilado is not None:
 
         st.markdown("---")
 
-        # --- NIVEL 2.2: INFOGRAFÍA RESTO DEL MERCADO (DENTRO DE EXPANDER) ---
+        # --- NIVEL 2.2: INFOGRAFÍA RESTO DEL MERCADO ---
         st.subheader(f"🏆 Top 3 Ramos: Resto del Mercado")
         
         # Obtenemos de la 21 en adelante
-        resto_ytd = df_r_ytd.nlargest(len(df_r_ytd), 'Total_YTD').iloc[20:]
+        resto_ytd = df_r_ytd.sort_values('TOTAL PNC', ascending=False).iloc[20:]
 
         if not resto_ytd.empty:
             with st.expander("Ver detalle de las demás empresas"):
-                # Calculamos cuántas filas de 5 necesitamos
                 import math
-                num_empresas = len(resto_ytd)
-                num_filas = math.ceil(num_empresas / 5)
-                
+                num_filas = math.ceil(len(resto_ytd) / 5)
                 for f in range(num_filas):
                     fila_data = resto_ytd.iloc[f*5 : (f+1)*5]
                     cols_inf = st.columns(5)
@@ -845,12 +847,11 @@ if df_compilado is not None:
                         with cols_inf[i]:
                             st.markdown(f"""<div style="background-color: #1b263b; color: white; padding: 8px; text-align: center; border-radius: 5px; font-size: 0.75em; font-weight: bold; min-height: 45px; display: flex; align-items: center; justify-content: center; border: 1px solid #415a77;">{row['NombreCorto']}</div>""", unsafe_allow_html=True)
                             top_3 = row[columnas_ramos].astype(float).nlargest(3)
-                            colores_inf = ["#00509d", "#007ea7", "#00a8e8"]
+                            colores_inf = ["#004b93", "#007ab3", "#00a9e0"]
                             for rank, (ramo, valor) in enumerate(top_3.items()):
                                 pct = (valor / row['Total_YTD'] * 100) if row['Total_YTD'] > 0 else 0
                                 st.markdown(f"""<div style="background-color: {colores_inf[rank]}; color: white; padding: 8px; border-radius: 3px; margin-top: 4px; text-align: center; border-left: 3px solid white;"><p style="margin: 0; font-size: 0.6em; font-weight: bold; line-height: 1.1;">{ramo}</p><p style="margin: 0; font-size: 0.75em; font-weight: bold;">{pct:.1f}%</p></div>""", unsafe_allow_html=True)
                     st.write("")
-
 # --- NIVEL 3: SERIE TEMPORAL POR RAMO (ESTILO COMPARATIVO DOLARIZADO) ---
         st.subheader("🔍 Evolución Histórica Mensual")
         
