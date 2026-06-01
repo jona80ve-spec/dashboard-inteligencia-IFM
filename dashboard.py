@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+import statsmodels.api as sm
 
 # =================================================================
 # 1. CONFIGURACIÓN DE PÁGINA Y ESTILO
@@ -12,30 +13,25 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Estilos CSS para mejorar la apariencia y ocultar elementos innecesarios
 st.markdown("""
     <style>
-    /* 1. Fondo y Métricas (Mantenemos tu estilo Pro) */
     .main {background-color: #0e1117;}
-    .stMetric {background-color: #1e2130; padding: 20px; border-radius: 12px;}
-
-    /* 2. Ocultar elementos innecesarios */
-    header {visibility: hidden;}
-    footer {visibility: hidden;}
-    #viewerBadge {display: none;}
-    .stAppDeployButton {display: none;}
-
-    /* 3. MENÚ INTELIGENTE: Bloqueado en PC, funcional en Móvil */
-    @media (min-width: 768px) {
-        [data-testid="sidebar-close-button"],
-        [data-testid="stSidebarCollapseButton"] {
-            display: none !important;
-        }
+    [data-testid="stMetricValue"] {font-size: 28px !important;}
+    .stMetric {
+        background-color: #1e2130; 
+        padding: 20px; 
+        border-radius: 12px; 
+        border: 1px solid #3d4461;
     }
-
-    /* 4. Ajustar espacio superior */
-    .block-container {padding-top: 1rem;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    /* Ajuste para que las tablas se vean mejor en modo oscuro */
+    .stDataFrame {border: 1px solid #3d4461; border-radius: 10px;}
     </style>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+
 # --- INICIALIZACIÓN DE SESSION STATE (Al inicio del archivo) ---
 if 'empresa_memoria' not in st.session_state:
     # Definimos la empresa inicial por defecto
@@ -46,7 +42,7 @@ def actualizar_empresa():
 # =================================================================
 # 2. RUTAS Y CARGA DE DATOS (CACHEADO)
 # =================================================================
-RUTA_EXCEL = "Dashboard IFM historico.xlsx"
+RUTA_EXCEL = r"C:\Users\jonatan.avendano\Desktop\Documentos JA\IFM\Dasboard IFM empresas de seguros\Dashboard IFM historico.xlsx"
 
 @st.cache_data
 def cargar_datos_maestros():
@@ -150,10 +146,11 @@ if df_compilado is not None:
 
     moneda = st.sidebar.radio("Seleccione Tipo de Moneda", ["VES", "USD"])
     st.sidebar.markdown("---")
+    
     # Selector de Sección
     menu = st.sidebar.radio(
         "Ir a la sección:",
-        ["📊 Resultados Financieros", "📈 Serie Temporal", "🚗 Detalle por Ramos", "🏢 Resumen por Empresa"],
+        ["📊 Resultados Financieros", "📈 Serie Temporal", "🚗 Detalle por Ramos", "🏢 Resumen por Empresa", "🔮 Proyecciones"],
         index=0
     )
     
@@ -268,13 +265,13 @@ if df_compilado is not None:
         color_icr = "#ff4b4b" if icr_mercado_val < 1 else "#00f5d4"
         
         metrics_data = [
-            (r_com_t, "Comisiones", "#4e3b8c", "%"), 
-            (r_gaq_t, "Gtos. Adq.", "#0077b6", "%"),
-            (r_gad_t, "Gtos. Admin", "#00b4d8", "%"), 
-            (r_sin_t, "Siniestralidad", "#5b84b1", "%"),
-            (r_rea_t, "Costo Reaseg.", "#3d4461", "%"), 
-            (ind_tc_t, "Tasa Comb.", color_tc, "%"),
-            (icr_mercado_val, "ICR", color_icr, "") # ICR sin sufijo %
+            (r_com_t, "Comisiones (COM)", "#4e3b8c", "%"), 
+            (r_gaq_t, "Gtos. Adq. (IA)", "#0077b6", "%"),
+            (r_gad_t, "Gtos. Admin (IGA)", "#00b4d8", "%"), 
+            (r_sin_t, "Siniestralidad (SI)", "#5b84b1", "%"),
+            (r_rea_t, "Costo Reaseguro (CR)", "#3d4461", "%"), 
+            (ind_tc_t, "Tasa Combinada (TC)", color_tc, "%"),
+            (icr_mercado_val, "Cobertura de Reservas (ICR)", color_icr, "") # ICR sin sufijo %
         ]
         
         for col, (val, lab, col_hex, suf) in zip(g_cols, metrics_data):
@@ -342,11 +339,11 @@ if df_compilado is not None:
         df_ranking['IA (%)'] = (df_act['GastosdeAdquision'] / df_act['PrimasNetasCobradas'] * 100).fillna(0)
         df_ranking['IGA (%)'] = (df_act['Gastosdeadministracion'] / df_act['PrimasNetasCobradas'] * 100).fillna(0)
         df_ranking['SI (%)'] = (df_act['TotalGenralSI'] / df_act['Total GeneralPDev'] * 100).fillna(0)
-        df_ranking['REA (%)'] = (-(df_act['ResultadodelReaseguroCedido']) / df_act['Total GeneralPDev'] * 100).fillna(0)
-        df_ranking['TC (%)'] = df_ranking['Com (%)'] + df_ranking['IA (%)'] + df_ranking['IGA (%)'] + df_ranking['SI (%)'] + df_ranking['REA (%)']
-        df_ranking['ICR_IND'] = (df_act['InversionesAptas'] / df_act['ReservasTecnicas']).fillna(0)
+        df_ranking['CR (%)'] = (-(df_act['ResultadodelReaseguroCedido']) / df_act['Total GeneralPDev'] * 100).fillna(0)
+        df_ranking['TC (%)'] = df_ranking['Com (%)'] + df_ranking['IA (%)'] + df_ranking['IGA (%)'] + df_ranking['SI (%)'] + df_ranking['CR (%)']
+        df_ranking['ICR'] = (df_act['InversionesAptas'] / df_act['ReservasTecnicas']).fillna(0)
 
-        cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'REA (%)', 'TC (%)', 'ICR_IND']
+        cols_table = ['NombreCorto', 'PrimasNetasCobradas', 'Mkt (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'SI (%)', 'CR (%)', 'TC (%)', 'ICR']
         df_ranking = df_ranking.sort_values('PrimasNetasCobradas', ascending=False).reset_index(drop=True)
 
         # --- FUNCIÓN DE ESTILO ---
@@ -357,17 +354,17 @@ if df_compilado is not None:
 
             return df.style\
                 .map(lambda x: 'color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x > 100 else '', subset=['TC (%)'])\
-                .map(lambda x: 'background-color: rgba(255, 75, 75, 0.15); color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x < 1 else '', subset=['ICR_IND'])\
+                .map(lambda x: 'background-color: rgba(255, 75, 75, 0.15); color: #ff4b4b; font-weight: bold' if isinstance(x, (int, float)) and x < 1 else '', subset=['ICR'])\
                 .format({
                     'PrimasNetasCobradas': lambda x: f"{formato_ves(x)} {simbolo}",
                     'Mkt (%)': lambda x: format_val(x),
-                    'ICR_IND': lambda x: format_val(x, "{:.2f}"),
+                    'ICR': lambda x: format_val(x, "{:.2f}"),
                     'TC (%)': lambda x: format_val(x), 
                     'SI (%)': lambda x: format_val(x), 
                     'Com (%)': lambda x: format_val(x),
                     'IA (%)': lambda x: format_val(x), 
                     'IGA (%)': lambda x: format_val(x), 
-                    'REA (%)': lambda x: format_val(x)
+                    'CR (%)': lambda x: format_val(x)
                 })
 
         paleta_azul_pro = ["#E3F2FD", "#90CAF9", "#2196F3", "#1565C0", "#0D47A1"]
@@ -418,7 +415,7 @@ if df_compilado is not None:
 # SECCIÓN: SERIE TEMPORAL (HISTÓRICO MENSUAL DOLARIZADO)
 # ======================================================================
     elif menu == "📈 Serie Temporal":
-        st.title("📈 Evolución Histórica del Mercado (Dolarización Dinámica)")
+        st.title("📈 Evolución Histórica del Mercado")
         
         simbolo = "$" if moneda == "USD" else "Bs."
 
@@ -487,14 +484,14 @@ if df_compilado is not None:
         df_timeline['Com (%)'] = (df_timeline['Comisiones'] / df_timeline['PrimasNetasCobradas'] * 100).fillna(0)
         df_timeline['IA (%)'] = (df_timeline['GastosdeAdquision'] / df_timeline['PrimasNetasCobradas'] * 100).fillna(0)
         df_timeline['IGA (%)'] = (df_timeline['Gastosdeadministracion'] / df_timeline['PrimasNetasCobradas'] * 100).fillna(0)
-        df_timeline['REA (%)'] = (-(df_timeline['ResultadodelReaseguroCedido']) / df_timeline['Total GeneralPDev'] * 100).fillna(0)
-        df_timeline['Índice Combinado (%)'] = df_timeline['SI (%)'] + df_timeline['Com (%)'] + df_timeline['IA (%)'] + df_timeline['IGA (%)'] + df_timeline['REA (%)']
+        df_timeline['Costo Reaseguro (%)'] = (-(df_timeline['ResultadodelReaseguroCedido']) / df_timeline['Total GeneralPDev'] * 100).fillna(0)
+        df_timeline['Tasa Combinada (%)'] = df_timeline['SI (%)'] + df_timeline['Com (%)'] + df_timeline['IA (%)'] + df_timeline['IGA (%)'] + df_timeline['Costo Reaseguro (%)']
 
-# -------------------------------------------------------------
+        # -------------------------------------------------------------
         # --- BLOQUE 1: COMPARATIVO INTERANUAL (FILTRADO POR MES) ---
         # -------------------------------------------------------------
         ano_previo = ano_actual - 1
-        st.subheader(f"📊 Crecimiento Real: {ano_actual} vs {ano_previo} ({simbolo})")
+        st.subheader(f"📊 Crecimiento Nominal PNC: {ano_actual} vs {ano_previo} ({simbolo})")
 
         # 1. Definimos la lista exacta de meses y el corte numérico
         nombres_meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
@@ -585,10 +582,10 @@ if df_compilado is not None:
                 labels = {'PNC Mensual Real': 'PNC (Flujo)', 'SI Monto': 'Siniestros', 'Resultado Técnico Neto': 'Res. Técnico', 'Saldo Operaciones': 'Saldo Operaciones'}
                 default_h = ['PNC Mensual Real']
             else:
-                opciones_h = ['SI (%)', 'Índice Combinado (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'REA (%)']
+                opciones_h = ['SI (%)', 'Tasa Combinada (%)', 'Com (%)', 'IA (%)', 'IGA (%)', 'Costo Reaseguro (%)']
                 if 'ICR (Veces)' in df_timeline.columns: opciones_h.append('ICR (Veces)')
                 labels = {opt: opt for opt in opciones_h}
-                default_h = ['SI (%)', 'Índice Combinado (%)']
+                default_h = ['SI (%)', 'Tasa Combinada (%)']
             
             vars_sel = st.multiselect("Indicadores:", opciones_h, default=default_h)
 
@@ -603,9 +600,9 @@ if df_compilado is not None:
                                xaxis=dict(rangeslider=dict(visible=True), type="date"))
             st.plotly_chart(fig_h, use_container_width=True)
 
-    # -----------------------------------------------------------------
+# -----------------------------------------------------------------
     # SECCIÓN: ANÁLISIS DINÁMICO DE RAMOS (RADIAL + INFOGRAFÍA + SERIE)
-    # -----------------------------------------------------------------
+# -----------------------------------------------------------------
     elif menu == "🚗 Detalle por Ramos":
         st.title(f"🚗 Detalle por Ramos: {mes_actual} {ano_actual}")
         
@@ -852,6 +849,7 @@ if df_compilado is not None:
                                 pct = (valor / row['Total_YTD'] * 100) if row['Total_YTD'] > 0 else 0
                                 st.markdown(f"""<div style="background-color: {colores_inf[rank]}; color: white; padding: 8px; border-radius: 3px; margin-top: 4px; text-align: center; border-left: 3px solid white;"><p style="margin: 0; font-size: 0.6em; font-weight: bold; line-height: 1.1;">{ramo}</p><p style="margin: 0; font-size: 0.75em; font-weight: bold;">{pct:.1f}%</p></div>""", unsafe_allow_html=True)
                     st.write("")
+
 # --- NIVEL 3: SERIE TEMPORAL POR RAMO (ESTILO COMPARATIVO DOLARIZADO) ---
         st.subheader("🔍 Evolución Histórica Mensual")
         
@@ -987,6 +985,7 @@ if df_compilado is not None:
         so_vis = df_emp['SaldodeOperaciones']
         rtn_vis = df_emp['ResultadoTecnicoNeto']
         si_vis = df_emp['TotalGenralSI']
+        cap_vis = df_emp['CapitalSocial']
 
         # 3. Valores Año Anterior (Base en Bs.) para variaciones
         pnc_comp_aa = df_emp_ant_aa['PrimasNetasCobradas'].iloc[0] if not df_emp_ant_aa.empty else 0
@@ -1033,6 +1032,7 @@ if df_compilado is not None:
                 so_comp_aa = so_comp_aa / t_cierre_aa
                 rtn_vis = rtn_vis / t_cierre_act
                 si_vis = si_vis / t_cierre_act
+                cap_vis = cap_vis
 
             except Exception as e:
                 st.sidebar.error(f"Error en conversión USD: {e}")
@@ -1042,16 +1042,16 @@ if df_compilado is not None:
         var_so = ((so_vis / so_comp_aa) - 1) * 100 if so_comp_aa != 0 else 0
 
         # 5. RENDERIZADO
-        c1, c2, c3, c4, c5 = st.columns(5)
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
 
         with c1:
             st.metric("Primas Netas Cobradas", f"{formato_ves(pnc_vis)} {simbolo}", f"{var_pnc:.2f}% vs AA")
 
         with c2:
-            st.metric("Resultado Técnico", f"{formato_ves(rtn_vis)} {simbolo}")
+            st.metric("Saldo de Operaciones", f"{formato_ves(so_vis)} {simbolo}", f"{var_so:.2f}% vs AA")
 
         with c3:
-            st.metric("Saldo de Operaciones", f"{formato_ves(so_vis)} {simbolo}", f"{var_so:.2f}% vs AA")
+            st.metric("Resultado Técnico Neto", f"{formato_ves(rtn_vis)} {simbolo}")
 
         with c4:
             mkt_share = (pnc_ind / total_mercado_pnc * 100) if total_mercado_pnc > 0 else 0
@@ -1059,6 +1059,9 @@ if df_compilado is not None:
 
         with c5:
             st.metric("Siniestros Incurridos", f"{formato_ves(si_vis)} {simbolo}")
+
+        with c6:
+            st.metric("Capital Social", f"{formato_ves(cap_vis)} Bs.")
 
         st.markdown("---")
 
@@ -1220,6 +1223,315 @@ if df_compilado is not None:
         else:
             st.info(f"No hay datos históricos suficientes para {empresa_sel}.")
 
+# -----------------------------------------------------------------
+    # SECCIÓN: PROYECCIÓN ESTRATÉGICA (VERSIÓN DINÁMICA FINAL)
+# -----------------------------------------------------------------
+    elif menu == "🔮 Proyecciones":
+        st.title("🔮 Proyección de PNC (Flujo en USD)")
+        
+        # 1. CONFIGURACIÓN EN SIDEBAR
+        st.sidebar.subheader("Configuración de Proyección")
+        ultimo_anio_data = int(df_compilado['AÑO'].max())
+        
+        target_anio = st.sidebar.selectbox("Año Objetivo:", [ultimo_anio_data, ultimo_anio_data + 1], index=0)
+        
+        target_mes = st.sidebar.number_input(
+            "Mes Objetivo (1-12):", 
+            min_value=1, 
+            max_value=12, 
+            value=12, 
+            step=1,
+            help="Seleccione el mes de corte para la proyección (1=Enero, 12=Diciembre)"
+        )
+
+        # 2. PREPARACIÓN DE LA SERIE TEMPORAL
+        df_p = df_compilado.groupby(['AÑO', 'MES']).agg({
+            'PrimasNetasCobradas': 'sum',
+            'TasaPromedio': 'mean'
+        }).reset_index()
+        
+        meses_ord = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
+        df_p['m_num'] = df_p['MES'].map({m: i+1 for i, m in enumerate(meses_ord)})
+        df_p = df_p.sort_values(['AÑO', 'm_num']).reset_index(drop=True)
+        
+        flujo_usd = []
+        for i in range(len(df_p)):
+            if df_p.iloc[i]['m_num'] == 1 or i == 0 or df_p.iloc[i]['AÑO'] != df_p.iloc[i-1]['AÑO']:
+                pnc_mes_bs = df_p.iloc[i]['PrimasNetasCobradas']
+            else:
+                pnc_mes_bs = df_p.iloc[i]['PrimasNetasCobradas'] - df_p.iloc[i-1]['PrimasNetasCobradas']
+            tasa = df_p.iloc[i]['TasaPromedio']
+            flujo_usd.append(pnc_mes_bs / tasa if tasa > 0 else 0)
+
+        df_p['USD_Mensual'] = flujo_usd
+        df_p['Idx'] = range(len(df_p))
+        df_modelo = df_p[df_p['USD_Mensual'] > 0].copy()
+
+        if not df_modelo.empty:
+            # 3. CONFIGURACIÓN DE LOS PERÍODOS
+            ult_anio = int(df_modelo['AÑO'].max())
+            ult_mes = int(df_modelo[df_modelo['AÑO'] == ult_anio]['m_num'].max())
+            ultimo_idx = int(df_modelo['Idx'].max())
+            
+            # Calcular cuántos meses hacia el futuro se deben pronosticar
+            n_meses_total = ((target_anio - ult_anio) * 12) + (target_mes - ult_mes)
+            
+            X = df_modelo['Idx'].values
+            y = df_modelo['USD_Mensual'].values
+            
+            # --- ENTRENAMIENTO DEL MODELO SARIMA ---
+            try:
+                modelo_sarima = sm.tsa.statespace.SARIMAX(
+                    y,
+                    order=(1, 1, 1),              # Componente regular (ar, i, ma)
+                    seasonal_order=(1, 1, 1, 12), # Componente estacional mensual
+                    enforce_stationarity=False,
+                    enforce_invertibility=False
+                )
+                resultado_sarima = modelo_sarima.fit(disp=False)
+                
+                # Proyecciones históricas y futuras
+                y_predicha_pasado = resultado_sarima.fittedvalues
+                predicciones_futuras = resultado_sarima.forecast(steps=n_meses_total)
+                
+                # --- Cálculo de R cuadrado ---
+                residuos_sarima = y - y_predicha_pasado
+                ss_res = np.sum(residuos_sarima**2)
+                ss_tot = np.sum((y - np.mean(y))**2)
+                r_cuadrado = 1 - (ss_res / ss_tot) if ss_tot != 0 else 0
+                r_porcentaje_formateado = formato_ves(r_cuadrado * 100)
+                
+                # --- MOSTRAR DETALLES EN STREAMLIT ---
+                with st.expander("📊 Detalles Técnicos del Modelo SARIMA"):
+                    st.write(f"**Coeficiente de Determinación ($R^2$):** {r_cuadrado:.4f}")
+                    if r_cuadrado > 0.70:
+                        st.success(f" El Modelo SARIMA indica que el **{r_porcentaje_formateado}%** de la variabilidad es explicada.")
+                    elif r_cuadrado > 0.40:
+                        st.warning("⚠️ El modelo captura la estructura pero existe volatilidad residual.")
+                    else:
+                        st.error("🚨 Precaución: El ajuste histórico es bajo. Datos muy volátiles.")
+            
+                    st.markdown("---")
+                    st.markdown("### 📝 Resumen Ejecutivo")
+                    st.write(f"""
+                    Para el análisis técnico y la proyección de las **Primas Netas Cobradas (PNC)** mensuales en USD, se implementó un modelo avanzado de Series de Tiempo **$SARIMA(1,1,1) \\times (1,1,1)_{12}$**. 
+                    
+                    La selección de esta estructura metodológica está plenamente justificada por su capacidad para procesar y modelar simultáneamente las dimensiones críticas que caracterizan el comportamiento mensual del mercado asegurador:
+                    
+                    * **Componente Autorregresivo $AR(1)$:** Evalúa la dependencia del comportamiento del primaje actual respecto al mes previo y al mismo período del año anterior, reflejando la inercia y los patrones estables del volumen de PNC.
+                    * **Componente Integrado $I(1)$:** Aplica diferencias regulares y estacionales para estabilizar la tendencia de crecimiento a largo plazo y aislar las fluctuaciones cíclicas anuales asociadas a lo que se presume es por periodos de renovación y cobranza de pólizas.
+                    * **Componente de Media Móvil $MA(1)$:** Suaviza e incorpora los choques aleatorios o las desviaciones inesperadas en los flujos del sistema asegurador.
+                    
+                    El modelo es metodológicamente correcto y estadísticamente robusto para el análisis del mercado asegurador, logrando explicar un **{r_porcentaje_formateado}%** de la variabilidad histórica de los datos. Al evaluar las dependencias del pasado y aislar de manera precisa los picos y valles de la estacionalidad periódica; el algoritmo garantiza que el cálculo de los cierres acumulados y las variaciones interanuales de las PNC sea altamente confiable. Esta herramienta automatizada dota a la **SUDEASEG** de capacidades predictivas esenciales para la planificación financiera, el monitoreo y supervisión proactiva de la solvencia del mercado y el fortalecimiento del control regulatorio del sector.
+                    """)
+
+            except Exception as e:
+                st.error(f"Error al ajustar el modelo SARIMA: {e}")
+                residuos_sarima = np.zeros(len(y))
+                y_predicha_pasado = y
+                predicciones_futuras = np.zeros(n_meses_total)
+
+            # --- SECCIÓN: VALIDACIÓN ESTRATÉGICA DE RESIDUOS ---
+            with st.expander("📊 Validación del Modelo (Análisis de Residuos)"):
+                mae = np.mean(np.abs(residuos_sarima))
+                rmse = np.sqrt(np.mean(residuos_sarima**2))
+                fechas_hist = [f"{m} {a}" for m, a in zip(df_modelo['MES'], df_modelo['AÑO'])]
+                
+                col_res1, col_res2 = st.columns(2)
+                with col_res1:
+                    st.metric("Error Medio (MAE)", f"$ {formato_ves(mae)}")
+                    st.caption("Promedio de desviación de las predicciones vs realidad.")
+                with col_res2:
+                    sesgo = np.mean(residuos_sarima)
+                    st.metric("Sesgo del Modelo", f"$ {formato_ves(sesgo)}")
+                    st.caption("Cercano a 0 indica un modelo balanceado, menor que 0 sobreestimación y mayor que 0 subestimado.")
+
+                # Gráfico de dispersión de residuos
+                fig_res = go.Figure()
+                fig_res.add_shape(
+                    type="line", x0=min(X), x1=max(X), y0=0, y1=0,
+                    line=dict(color="white", dash="dash")
+                )
+                fig_res.add_trace(go.Scatter(
+                    x=X, y=residuos_sarima, mode='markers', name="Residuos",
+                    marker=dict(color="#FF4B4B", size=10, opacity=0.6),
+                    text=fechas_hist,
+                    hovertemplate="<b>%{text}</b><br>Error: $ %{y:,.2f}<extra></extra>"
+                ))
+                fig_res.update_layout(
+                    title="Dispersión de Residuos (Debe ser aleatoria)",
+                    xaxis_title="Meses (Serie Temporal)", yaxis_title="Error (USD)",
+                    template='plotly_dark', height=350
+                )
+                st.plotly_chart(fig_res, use_container_width=True)
+                
+                st.markdown("**Diagnóstico de Validez:**")
+                if abs(sesgo) < (np.std(residuos_sarima) * 0.1):
+                    st.write("✅ **Centrado:** El modelo está bien balanceado.")
+                else:
+                    st.write("⚠️ **Sesgo presente:** El modelo tiende a desviarse en promedio.")
+
+                mitad = len(residuos_sarima) // 2
+                if np.std(residuos_sarima[:mitad]) * 2 > np.std(residuos_sarima[mitad:]):
+                    st.write("✅ **Estabilidad:** La varianza del error es constante.")
+                else:
+                    st.write("⚠️ **Varianza creciente:** Menos preciso en periodos recientes.")
+
+            # # 4. GENERACIÓN DE LA PROYECCIÓN CON EJE CRONOLÓGICO CONTINUO (DATETIME)
+            if n_meses_total > 0:
+                preds_futuras = np.maximum(predicciones_futuras, 0)
+                
+                # 1. Crear un mapeo numérico de meses a su representación de dos dígitos
+                mapeo_meses_num = {m: i+1 for i, m in enumerate(meses_ord)}
+                
+                # 2. Convertir el histórico real a objetos de tipo fecha (Datetime)
+                fechas_hist_dt = []
+                for m, a in zip(df_modelo['MES'], df_modelo['AÑO']):
+                    m_num = mapeo_meses_num.get(m, 1)
+                    fechas_hist_dt.append(pd.to_datetime(f"{a}-{m_num:02d}-01"))
+                
+                # 3. Generar las fechas futuras continuas en formato Datetime
+                fechas_futuras_dt = []
+                a_loop = ult_anio
+                m_loop = ult_mes
+                for _ in range(n_meses_total):
+                    m_loop += 1
+                    if m_loop > 12:
+                        m_loop = 1
+                        a_loop += 1
+                    fechas_futuras_dt.append(pd.to_datetime(f"{a_loop}-{m_loop:02d}-01"))
+                    
+            # # 4. GENERACIÓN DE LA PROYECCIÓN CON UNIÓN CRONOLÓGICA PERFECTA
+            if n_meses_total > 0:
+                preds_futuras = np.maximum(predicciones_futuras, 0)
+                
+                # 1. Mapeo numérico de meses
+                mapeo_meses_num = {m: i+1 for i, m in enumerate(meses_ord)}
+                
+                # 2. Convertir el histórico real a objetos Datetime
+                fechas_hist_dt = []
+                for m, a in zip(df_modelo['MES'], df_modelo['AÑO']):
+                    m_num = mapeo_meses_num.get(m, 1)
+                    fechas_hist_dt.append(pd.to_datetime(f"{a}-{m_num:02d}-01"))
+                
+                # 3. Generar las fechas futuras continuas en formato Datetime
+                fechas_futuras_dt = []
+                a_loop = ult_anio
+                m_loop = ult_mes
+                for _ in range(n_meses_total):
+                    m_loop += 1
+                    if m_loop > 12:
+                        m_loop = 1
+                        a_loop += 1
+                    fechas_futuras_dt.append(pd.to_datetime(f"{a_loop}-{m_loop:02d}-01"))
+                
+                # --- TRUCO DE UNIÓN DE LÍNEAS ---
+                # Insertamos el último punto histórico al inicio de las listas de la proyección
+                fechas_proyeccion_grafico = [fechas_hist_dt[-1]] + fechas_futuras_dt
+                valores_proyeccion_grafico = np.insert(preds_futuras, 0, y[-1])
+                # ---------------------------------
+                    
+                # 4. RENDERIZADO DEL GRÁFICO EVOLUTIVO EN PLOTLY
+                fig = go.Figure()
+                
+                # Línea del Histórico Real
+                fig.add_trace(go.Scatter(
+                    x=fechas_hist_dt, 
+                    y=y, 
+                    name="Histórico USD",
+                    hovertemplate="<b>%{x|%b %Y}</b><br>Monto: $ %{y:,.2f}<extra></extra>",
+                    line=dict(color="#00B4D8", width=2)
+                ))
+                
+                # Línea de la Proyección (Ahora unida físicamente al final del histórico)
+                fig.add_trace(go.Scatter(
+                    x=fechas_proyeccion_grafico, 
+                    y=valores_proyeccion_grafico, 
+                    name="Proyección",
+                    hovertemplate="<b>%{x|%b %Y}</b><br>(Proyectado)<br>Monto: $ %{y:,.2f}<extra></extra>",
+                    line=dict(color="#FF4B4B", dash="dash", width=3)
+                ))
+                
+                # Configuración del eje X con el motor de fechas nativo de Plotly
+                fig.update_layout(
+                    template='plotly_dark', 
+                    height=450, 
+                    hovermode="x unified",
+                    title=f"Proyección de PNC hasta {meses_ord[target_mes-1]} ({target_anio})",
+                    xaxis=dict(
+                        title="Serie Temporal",
+                        type="date",              # Mantiene el eje cronológico ordenado
+                        tickformat="%b %Y",       # Formato estético y compacto (Ej: Jan 2024)
+                        tickangle=-90,
+                        dtick="M1",                # Muestra una marca en el eje cada 1 meses
+                        range=[fechas_hist_dt[0], fechas_proyeccion_grafico[-1]]
+                    ),
+                    yaxis=dict(title="Monto en USD")
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            # # 5. CÁLCULO DE ACUMULADOS Y VARIACIÓN INTERANUAL (YTD)
+            if n_meses_total > 0:
+                # --- A. CONSTRUIR UN DATAFRAME UNIFICADO (HISTÓRICO + PROYECCIÓN) ---
+                # Esto nos permite agrupar y sumar por año de manera sumamente sencilla
+                df_historico_limpio = df_modelo[['AÑO', 'm_num', 'USD_Mensual']].copy()
+                df_historico_limpio.columns = ['Anio', 'Mes', 'Monto']
+                
+                # Reconstruir las fechas futuras correspondientes a las predicciones
+                registros_futuros = []
+                a_loop = ult_anio
+                m_loop = ult_mes
+                for val_pred in predicciones_futuras:
+                    m_loop += 1
+                    if m_loop > 12:
+                        m_loop = 1
+                        a_loop += 1
+                    registros_futuros.append({'Anio': a_loop, 'Mes': m_loop, 'Monto': max(val_pred, 0)})
+                
+                df_futuro = pd.DataFrame(registros_futuros)
+                
+                # Dataframe maestro que contiene absolutamente toda la línea de tiempo (Real + Proyectado)
+                df_maestro = pd.concat([df_historico_limpio, df_futuro], ignore_index=True)
+                
+                # --- B. CALCULAR EL ACUMULADO DEL AÑO SELECCIONADO (YTD ACTUAL) ---
+                # Filtramos el año objetivo y sumamos desde el mes 1 hasta el mes seleccionado
+                df_actual_filtrado = df_maestro[(df_maestro['Anio'] == target_anio) & (df_maestro['Mes'] <= target_mes)]
+                cierre_actual_acumulado = df_actual_filtrado['Monto'].sum()
+                
+                # --- C. CALCULAR EL ACUMULADO DEL AÑO ANTERIOR (YTD COMPARATIVO) ---
+                # Filtramos el año anterior (target_anio - 1) exactamente hasta el mismo mes de corte
+                anio_anterior = target_anio - 1
+                df_anterior_filtrado = df_maestro[(df_maestro['Anio'] == anio_anterior) & (df_maestro['Mes'] <= target_mes)]
+                cierre_anterior_acumulado = df_anterior_filtrado['Monto'].sum()
+                
+                # --- D. PORCENTAJE DE VARIACIÓN INTERANUAL ---
+                if cierre_anterior_acumulado > 0:
+                    crecimiento_pct = ((cierre_actual_acumulado / cierre_anterior_acumulado) - 1) * 100
+                else:
+                    crecimiento_pct = 0.0
+
+                # # 6. RENDERIZADO DE LAS DOS CAJITAS EN STREAMLIT
+                st.markdown("---")
+                c1, c2 = st.columns(2)
+                
+                with c1:
+                    st.metric(
+                        label=f"📊 Valor Estimado a {meses_ord[target_mes-1]} ({target_anio})",
+                        value=f"$ {formato_ves(cierre_actual_acumulado)}"
+                    )
+                    st.caption(f"Suma total acumulada desde Enero hasta {meses_ord[target_mes-1]} de {target_anio}.")
+                    
+                with c2:
+                    # Muestra la variación interanual comparando manzanas con manzanas
+                    st.metric(
+                        label=f"🔄 Var. Interanual {meses_ord[target_mes-1]} ({anio_anterior})",
+                        value=f"$ {formato_ves(cierre_anterior_acumulado)}",
+                        delta=f"{crecimiento_pct:.2f}%"
+                    )
+                    st.caption(f"Comparativa del acumulado actual contra el mismo período del año {anio_anterior}.")
+
+
 # =================================================================
 # 5. MENSAJE DE PIE DE PÁGINA O ERROR
 # =================================================================
@@ -1230,4 +1542,4 @@ st.sidebar.markdown("---")
 st.sidebar.caption("🏦🛡️**Sistema de Inteligencia IFM - Dashboard Corporativo**")
 st.sidebar.caption("© 2026 - Todos los derechos reservados")
 
-st.sidebar.caption("⚠️*Los datos convertidos a dólares (USD) son estrictamente de referencia. No representan necesariamente la contabilidad oficial en divisas de las Empresas.*")
+st.sidebar.caption("⚠️*Los montos convertidos a dólares (USD) son estrictamente de referencia. No representan necesariamente la contabilidad oficial en divisas de las Empresas.*")
