@@ -42,7 +42,7 @@ def actualizar_empresa():
 # =================================================================
 # 2. RUTAS Y CARGA DE DATOS (CACHEADO)
 # =================================================================
-RUTA_EXCEL = "Dashboard IFM historico.xlsx"
+RUTA_EXCEL = r"C:\Users\jonatan.avendano\Desktop\Documentos JA\IFM\Dasboard IFM empresas de seguros\Dashboard IFM historico.xlsx"
 
 @st.cache_data
 def cargar_datos_maestros():
@@ -1116,7 +1116,7 @@ if df_compilado is not None:
             (r_com, "Comisiones %", "#2196F3", True),
             (r_ia, "G. Adquisición %", "#2196F3", True),
             (r_gad, "G. Admin %", "#FF9800", True),
-            (r_si, "Siniestralidad %", "#ff4b4b", True),
+            (r_si, "Siniestros Incurridos %", "#ff4b4b", True),
             (r_rea, "Costo Reaseg %", "#64B5F6", True),
             (tc_ind_calc, "Tasa Comb %", "#795548", True),
             (icr_ind, "ICR (Inv/Res)", "#9C27B0", False)
@@ -1293,8 +1293,19 @@ if df_compilado is not None:
                 
                 # Proyecciones históricas y futuras
                 y_predicha_pasado = resultado_sarima.fittedvalues
-                predicciones_futuras = resultado_sarima.forecast(steps=n_meses_total)
                 
+                # Obtener el objeto completo de proyección
+                objeto_proyeccion = resultado_sarima.get_forecast(steps=n_meses_total)
+                
+                # Extraemos las predicciones centrales
+                predicciones_futuras = objeto_proyeccion.predicted_mean
+                
+                # --- CORRECCIÓN AQUÍ: Matriz de NumPy extraída directamente sin .iloc ---
+                matriz_intervalos = objeto_proyeccion.conf_int(alpha=0.05)
+                intervalo_inferior_pred = matriz_intervalos[:, 0]
+                intervalo_superior_pred = matriz_intervalos[:, 1]
+
+              
                 # --- Cálculo de R cuadrado ---
                 residuos_sarima = y - y_predicha_pasado
                 ss_res = np.sum(residuos_sarima**2)
@@ -1402,9 +1413,16 @@ if df_compilado is not None:
                         a_loop += 1
                     fechas_futuras_dt.append(pd.to_datetime(f"{a_loop}-{m_loop:02d}-01"))
                     
-            # # 4. GENERACIÓN DE LA PROYECCIÓN CON UNIÓN CRONOLÓGICA PERFECTA
+            # # 4. GENERACIÓN DE LA PROYECCIÓN CON UNIÓN CRONOLÓGICA PERFECTA E INTERVALO DE CONFIANZA
             if n_meses_total > 0:
                 preds_futuras = np.maximum(predicciones_futuras, 0)
+                
+                # --- [NUEVO] SIMULACIÓN / CÁLCULO DE INTERVALOS ---
+                # Si obtienes los intervalos de tu modelo SARIMA (ej: res.get_forecast()), úsalos aquí.
+                # Si no los tienes a la mano, puedes estimarlos con la varianza del histórico o pasarlos como variable.
+                # Aquí asumimos que tienes 'limite_inferior' y 'limite_superior' de la predicción:
+                lim_inf_futuro = np.maximum(intervalo_inferior_pred, 0) # Evitar valores negativos
+                lim_sup_futuro = intervalo_superior_pred
                 
                 # 1. Mapeo numérico de meses
                 mapeo_meses_num = {m: i+1 for i, m in enumerate(meses_ord)}
@@ -1426,14 +1444,40 @@ if df_compilado is not None:
                         a_loop += 1
                     fechas_futuras_dt.append(pd.to_datetime(f"{a_loop}-{m_loop:02d}-01"))
                 
-                # --- TRUCO DE UNIÓN DE LÍNEAS ---
-                # Insertamos el último punto histórico al inicio de las listas de la proyección
+                # --- TRUCO DE UNIÓN DE LÍNEAS PARA LA PROYECCIÓN Y SUS LÍMITES ---
                 fechas_proyeccion_grafico = [fechas_hist_dt[-1]] + fechas_futuras_dt
                 valores_proyeccion_grafico = np.insert(preds_futuras, 0, y[-1])
+                
+                # El intervalo de confianza también se une perfectamente en el último punto real
+                valores_lim_inf_grafico = np.insert(lim_inf_futuro, 0, y[-1])
+                valores_lim_sup_grafico = np.insert(lim_sup_futuro, 0, y[-1])
                 # ---------------------------------
                     
                 # 4. RENDERIZADO DEL GRÁFICO EVOLUTIVO EN PLOTLY
                 fig = go.Figure()
+                
+                # --- [NUEVO] TRACE DEL INTERVALO DE CONFIANZA (SOMBREADO) ---
+                # Límite Superior (Línea invisible, sirve de techo)
+                fig.add_trace(go.Scatter(
+                    x=fechas_proyeccion_grafico,
+                    y=valores_lim_sup_grafico,
+                    mode='lines',
+                    line=dict(width=0),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+                
+                # Límite Inferior (Rellena el espacio hacia el límite superior)
+                fig.add_trace(go.Scatter(
+                    x=fechas_proyeccion_grafico,
+                    y=valores_lim_inf_grafico,
+                    mode='lines',
+                    line=dict(width=0),
+                    fill='tonexty', # Rellena hasta el trazo anterior (Límite Sup)
+                    fillcolor='rgba(255, 75, 75, 0.15)', # Rojo traslúcido compatible con plotly_dark
+                    name='Intervalo de Confianza (95%)',
+                    hovertemplate="<b>%{x|%b %Y}</b><br>Lím. Inferior: $ %{y:,.2f}<extra></extra>"
+                ))
                 
                 # Línea del Histórico Real
                 fig.add_trace(go.Scatter(
@@ -1444,7 +1488,7 @@ if df_compilado is not None:
                     line=dict(color="#00B4D8", width=2)
                 ))
                 
-                # Línea de la Proyección (Ahora unida físicamente al final del histórico)
+                # Línea de la Proyección
                 fig.add_trace(go.Scatter(
                     x=fechas_proyeccion_grafico, 
                     y=valores_proyeccion_grafico, 
@@ -1461,46 +1505,54 @@ if df_compilado is not None:
                     title=f"Proyección de PNC hasta {meses_ord[target_mes-1]} ({target_anio})",
                     xaxis=dict(
                         title="Serie Temporal",
-                        type="date",              # Mantiene el eje cronológico ordenado
-                        tickformat="%b %Y",       # Formato estético y compacto (Ej: Jan 2024)
+                        type="date",              
+                        tickformat="%b %Y",       
                         tickangle=-90,
-                        dtick="M1",                # Muestra una marca en el eje cada 1 meses
+                        dtick="M1",                
                         range=[fechas_hist_dt[0], fechas_proyeccion_grafico[-1]]
                     ),
                     yaxis=dict(title="Monto en USD")
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-            # # 5. CÁLCULO DE ACUMULADOS Y VARIACIÓN INTERANUAL (YTD)
+# # 5. CÁLCULO DE ACUMULADOS Y VARIACIÓN INTERANUAL (YTD)
             if n_meses_total > 0:
-                # --- A. CONSTRUIR UN DATAFRAME UNIFICADO (HISTÓRICO + PROYECCIÓN) ---
-                # Esto nos permite agrupar y sumar por año de manera sumamente sencilla
+                # --- A. CONSTRUIR UN DATAFRAME UNIFICADO (HISTÓRICO + PROYECCIÓN + INTERVALOS) ---
                 df_historico_limpio = df_modelo[['AÑO', 'm_num', 'USD_Mensual']].copy()
                 df_historico_limpio.columns = ['Anio', 'Mes', 'Monto']
+                # En el histórico real, los límites inferior y superior son el mismo monto real
+                df_historico_limpio['Monto_Inf'] = df_historico_limpio['Monto']
+                df_historico_limpio['Monto_Sup'] = df_historico_limpio['Monto']
                 
-                # Reconstruir las fechas futuras correspondientes a las predicciones
                 registros_futuros = []
                 a_loop = ult_anio
                 m_loop = ult_mes
-                for val_pred in predicciones_futuras:
+                # Iteramos usando zip para incluir predicciones e intervalos calculados
+                for val_pred, val_inf, val_sup in zip(predicciones_futuras, intervalo_inferior_pred, intervalo_superior_pred):
                     m_loop += 1
                     if m_loop > 12:
                         m_loop = 1
                         a_loop += 1
-                    registros_futuros.append({'Anio': a_loop, 'Mes': m_loop, 'Monto': max(val_pred, 0)})
+                    registros_futuros.append({
+                        'Anio': a_loop, 
+                        'Mes': m_loop, 
+                        'Monto': max(val_pred, 0),
+                        'Monto_Inf': max(val_inf, 0), 
+                        'Monto_Sup': max(val_sup, 0)
+                    })
                 
                 df_futuro = pd.DataFrame(registros_futuros)
                 
-                # Dataframe maestro que contiene absolutamente toda la línea de tiempo (Real + Proyectado)
+                # Dataframe maestro con toda la línea de tiempo unificada
                 df_maestro = pd.concat([df_historico_limpio, df_futuro], ignore_index=True)
                 
-                # --- B. CALCULAR EL ACUMULADO DEL AÑO SELECCIONADO (YTD ACTUAL) ---
-                # Filtramos el año objetivo y sumamos desde el mes 1 hasta el mes seleccionado
+                # --- B. CALCULAR LOS ACUMULADOS DEL AÑO SELECCIONADO (YTD ACTUAL CON INTERVALOS) ---
                 df_actual_filtrado = df_maestro[(df_maestro['Anio'] == target_anio) & (df_maestro['Mes'] <= target_mes)]
                 cierre_actual_acumulado = df_actual_filtrado['Monto'].sum()
+                cierre_inferior_acumulado = df_actual_filtrado['Monto_Inf'].sum()
+                cierre_superior_acumulado = df_actual_filtrado['Monto_Sup'].sum()
                 
                 # --- C. CALCULAR EL ACUMULADO DEL AÑO ANTERIOR (YTD COMPARATIVO) ---
-                # Filtramos el año anterior (target_anio - 1) exactamente hasta el mismo mes de corte
                 anio_anterior = target_anio - 1
                 df_anterior_filtrado = df_maestro[(df_maestro['Anio'] == anio_anterior) & (df_maestro['Mes'] <= target_mes)]
                 cierre_anterior_acumulado = df_anterior_filtrado['Monto'].sum()
@@ -1516,10 +1568,24 @@ if df_compilado is not None:
                 c1, c2 = st.columns(2)
                 
                 with c1:
+                    # Métrica Principal (Valor Estimado Central)
                     st.metric(
                         label=f"📊 Valor Estimado a {meses_ord[target_mes-1]} ({target_anio})",
                         value=f"$ {formato_ves(cierre_actual_acumulado)}"
                     )
+                    
+                    # --- [NUEVO] DISEÑO DE INTERVALOS SUBTERRÁNEOS EN LA CAJITA ---
+                    st.html(f"""
+                        <div style="margin-top: -5px; margin-bottom: 15px; padding: 8px 12px; border-left: 3px solid #FF4B4B; background-color: rgba(255, 75, 75, 0.06); border-radius: 4px;">
+                            <span style="color: #808495; font-size: 0.85rem; display: block; margin-bottom: 2px;">Rango de Confianza (95%):</span>
+                            <span style="color: #E2E8F0; font-size: 0.95rem; font-weight: 500;">
+                                Min: <span style="color: #FFAAAA;">$ {formato_ves(cierre_inferior_acumulado)}</span> 
+                                &nbsp;&bull;&nbsp; 
+                                Max: <span style="color: #FF8888;">$ {formato_ves(cierre_superior_acumulado)}</span>
+                            </span>
+                        </div>
+                    """)
+                    
                     st.caption(f"Suma total acumulada desde Enero hasta {meses_ord[target_mes-1]} de {target_anio}.")
                     
                 with c2:
