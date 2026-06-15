@@ -42,7 +42,7 @@ def actualizar_empresa():
 # =================================================================
 # 2. RUTAS Y CARGA DE DATOS (CACHEADO)
 # =================================================================
-RUTA_EXCEL = "Dashboard IFM historico.xlsx"
+RUTA_EXCEL = r"C:\Users\jonatan.avendano\Desktop\Documentos JA\IFM\Dasboard IFM empresas de seguros\Dashboard IFM historico.xlsx"
 
 @st.cache_data
 def cargar_datos_maestros():
@@ -79,7 +79,7 @@ def formato_ves(valor):
     if pd.isna(valor): return "0,00"
     return "{:,.2f}".format(valor).replace(',', 'X').replace('.', ',').replace('X', '.')
 
-def crear_indicador_tecnico(valor, titulo, color="#00d4ff"):
+def crear_indicador_tecnico(valor, titulo, color="#00d4ff", rango_max=100):
     """Crea un gráfico de medio círculo (Gauge) para indicadores de gestión."""
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
@@ -87,13 +87,13 @@ def crear_indicador_tecnico(valor, titulo, color="#00d4ff"):
         number={'valueformat': '.2f', 'suffix': "%", 'font': {'size': 22, 'color': "white"}},
         title={'text': titulo, 'font': {'size': 14, 'color': "#9ea4b0"}},
         gauge={
-            'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "gray"},
+            'axis': {'range': [0, rango_max], 'tickwidth': 1, 'tickcolor': "gray"},
             'bar': {'color': color},
             'bgcolor': "rgba(0,0,0,0)",
             'borderwidth': 2,
             'bordercolor': "#3d4461",
             'steps': [
-                {'range': [0, 100], 'color': 'rgba(255,255,255,0.03)'}
+                {'range': [0, rango_max], 'color': 'rgba(255,255,255,0.03)'}
             ],
         }
     ))
@@ -265,18 +265,18 @@ if df_compilado is not None:
         color_icr = "#ff4b4b" if icr_mercado_val < 1 else "#00f5d4"
         
         metrics_data = [
-            (r_com_t, "Comisiones (COM)", "#4e3b8c", "%"), 
-            (r_gaq_t, "Gtos. Adq. (IA)", "#0077b6", "%"),
-            (r_gad_t, "Gtos. Admin (IGA)", "#FF9800", "%"), 
-            (r_sin_t, "Siniestralidad (SI)", "#ff4b4b", "%"),
-            (r_rea_t, "Costo Reaseguro (CR)", "#3d4461", "%"), 
-            (ind_tc_t, "Tasa Combinada (TC)", color_tc, "%"),
-            (icr_mercado_val, "Cobertura de Reservas (ICR)", color_icr, "") # ICR sin sufijo %
+            (r_com_t, "Comisiones (COM)", "#4e3b8c", "%", 100), 
+            (r_gaq_t, "Gtos. Adq. (IA)", "#0077b6", "%", 100),
+            (r_gad_t, "Gtos. Admin (IGA)", "#FF9800", "%", 100), 
+            (r_sin_t, "Siniestralidad (SI)", "#ff4b4b", "%", 100),
+            (r_rea_t, "Costo Reaseguro (CR)", "#3d4461", "%", 100), 
+            (ind_tc_t, "Tasa Combinada (TC)", color_tc, "%", 100),
+            (icr_mercado_val, "Cobertura de Reservas (ICR)", color_icr, "", 2) # ICR sin sufijo %
         ]
         
-        for col, (val, lab, col_hex, suf) in zip(g_cols, metrics_data):
+        for col, (val, lab, col_hex, suf, max_v) in zip(g_cols, metrics_data):
             with col: 
-                fig_g = crear_indicador_tecnico(val, lab, col_hex)
+                fig_g = crear_indicador_tecnico(val, lab, col_hex, rango_max=max_v)
                 fig_g.update_traces(number={'suffix': suf})
                 st.plotly_chart(fig_g, use_container_width=True)
 
@@ -1118,8 +1118,8 @@ if df_compilado is not None:
             (r_gad, "G. Admin %", "#FF9800", True),
             (r_si, "Siniestros Incurridos %", "#ff4b4b", True),
             (r_rea, "Costo Reaseg %", "#64B5F6", True),
-            (tc_ind_calc, "Tasa Comb %", "#795548", True),
-            (icr_ind, "ICR (Inv/Res)", "#9C27B0", False)
+            (tc_ind_calc, "Tasa Comb %", "#1A5F7A", True),
+            (icr_ind, "ICR (Inv/Res)", "#00f5d4", False)
         ]
 
         for i, (val, tit, col, perc) in enumerate(config_relojes):
