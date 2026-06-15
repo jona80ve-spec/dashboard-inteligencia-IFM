@@ -42,7 +42,7 @@ def actualizar_empresa():
 # =================================================================
 # 2. RUTAS Y CARGA DE DATOS (CACHEADO)
 # =================================================================
-RUTA_EXCEL = "Dashboard IFM historico.xlsx"
+RUTA_EXCEL = r"C:\Users\jonatan.avendano\Desktop\Documentos JA\IFM\Dasboard IFM empresas de seguros\Dashboard IFM historico.xlsx"
 
 @st.cache_data
 def cargar_datos_maestros():
@@ -84,7 +84,7 @@ def crear_indicador_tecnico(valor, titulo, color="#00d4ff"):
     fig = go.Figure(go.Indicator(
         mode="gauge+number",
         value=valor,
-        number={'suffix': "%", 'font': {'size': 22, 'color': "white"}},
+        number={'valueformat': '.2f', 'suffix': "%", 'font': {'size': 22, 'color': "white"}},
         title={'text': titulo, 'font': {'size': 14, 'color': "#9ea4b0"}},
         gauge={
             'axis': {'range': [0, 100], 'tickwidth': 1, 'tickcolor': "gray"},
@@ -267,8 +267,8 @@ if df_compilado is not None:
         metrics_data = [
             (r_com_t, "Comisiones (COM)", "#4e3b8c", "%"), 
             (r_gaq_t, "Gtos. Adq. (IA)", "#0077b6", "%"),
-            (r_gad_t, "Gtos. Admin (IGA)", "#00b4d8", "%"), 
-            (r_sin_t, "Siniestralidad (SI)", "#5b84b1", "%"),
+            (r_gad_t, "Gtos. Admin (IGA)", "#FF9800", "%"), 
+            (r_sin_t, "Siniestralidad (SI)", "#ff4b4b", "%"),
             (r_rea_t, "Costo Reaseguro (CR)", "#3d4461", "%"), 
             (ind_tc_t, "Tasa Combinada (TC)", color_tc, "%"),
             (icr_mercado_val, "Cobertura de Reservas (ICR)", color_icr, "") # ICR sin sufijo %
@@ -1114,7 +1114,7 @@ if df_compilado is not None:
         # Diccionario de configuración para los 7 gauges
         config_relojes = [
             (r_com, "Comisiones %", "#2196F3", True),
-            (r_ia, "G. Adquisición %", "#2196F3", True),
+            (r_ia, "G. Adquisición %", "#0077b6", True),
             (r_gad, "G. Admin %", "#FF9800", True),
             (r_si, "Siniestros Incurridos %", "#ff4b4b", True),
             (r_rea, "Costo Reaseg %", "#64B5F6", True),
