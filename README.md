@@ -2,7 +2,7 @@
 
 A production-ready data science web application built with Python and Streamlit. This project solves a core insurance challenge by transforming raw historical data into interactive predictive models and automated risk reports.
 
-Live Demo: https://streamlit.app
+https://inteligencia-ifm-seguros.streamlit.app/
 
 ---
 
