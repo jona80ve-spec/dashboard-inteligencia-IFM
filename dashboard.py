@@ -42,7 +42,7 @@ def actualizar_empresa():
 # =================================================================
 # 2. RUTAS Y CARGA DE DATOS (CACHEADO)
 # =================================================================
-RUTA_EXCEL = "Dashboard IFM historico.xlsx"
+RUTA_EXCEL = r"C:\Users\jonatan.avendano\Desktop\Documentos JA\IFM\Dasboard IFM empresas de seguros\Dashboard IFM historico.xlsx"
 
 @st.cache_data
 def cargar_datos_maestros():
@@ -1066,7 +1066,7 @@ if df_compilado is not None:
         st.markdown("---")
 
 # --- FILA 2: RATIOS TÉCNICOS Y FINANCIEROS (7 RELOJES OPTIMIZADOS) ---
-        st.write("#### ⚖️ Ratios Técnicos y Financieros Individuales")
+        st.write("#### ⚖️ Ratios Técnicos y Financieros")
         
         # 1. Cálculos de Ratios con la empresa seleccionada
         p_dev_ind = df_emp['Total GeneralPDev']
@@ -1279,11 +1279,19 @@ if df_compilado is not None:
             
             X = df_modelo['Idx'].values
             y = df_modelo['USD_Mensual'].values
+                                
+            # Identificamos la fila exacta de Octubre 2024 en los datos históricos
+            condicion_oct_24 = (df_modelo['AÑO'] == 2024) & (df_modelo['m_num'] == 10)
+            exog_entrenamiento = (condicion_oct_24.astype(int)).values
             
+            # Creamos la matriz de ceros para los meses que se van a proyectar al futuro
+            exog_futuro = np.zeros(n_meses_total)
+            # =================================================================
             # --- ENTRENAMIENTO DEL MODELO SARIMA ---
             try:
                 modelo_sarima = sm.tsa.statespace.SARIMAX(
                     y,
+                    exog=exog_entrenamiento,
                     order=(1, 1, 1),              # Componente regular (ar, i, ma)
                     seasonal_order=(1, 1, 1, 12), # Componente estacional mensual
                     enforce_stationarity=False,
@@ -1295,7 +1303,7 @@ if df_compilado is not None:
                 y_predicha_pasado = resultado_sarima.fittedvalues
                 
                 # Obtener el objeto completo de proyección
-                objeto_proyeccion = resultado_sarima.get_forecast(steps=n_meses_total)
+                objeto_proyeccion = resultado_sarima.get_forecast(steps=n_meses_total, exog=exog_futuro)
                 
                 # Extraemos las predicciones centrales
                 predicciones_futuras = objeto_proyeccion.predicted_mean
